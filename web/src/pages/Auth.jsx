@@ -1,143 +1,149 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import toast from 'react-hot-toast';
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import toast from "react-hot-toast";
+
+// 🔥 Firebase
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { auth, db } from "../firebase";
 
 const Auth = () => {
   const navigate = useNavigate();
   const [isLogin, setIsLogin] = useState(true);
+
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    gender: '', // New field for gender
-    password: '',
-    confirmPassword: ''
+    name: "",
+    email: "",
+    gender: "",
+    password: "",
+    confirmPassword: "",
   });
 
-  const handleInputChange = (e) => {
+  const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (isLogin) {
-      // Login Logic
-      toast.success('Login successfully!');
-      // Saving basic info to local storage for conditional Navbar logic
-      localStorage.setItem('user', JSON.stringify({ 
-        name: formData.email.split('@')[0], 
-        email: formData.email 
-      }));
-      navigate('/');
-    } else {
-      // Signup Logic
-      if (formData.password !== formData.confirmPassword) {
-        toast.error('Passwords do not match!');
-        return;
+    const { name, email, gender, password, confirmPassword } = formData;
+
+    try {
+      // 🔐 LOGIN
+      if (isLogin) {
+        await signInWithEmailAndPassword(auth, email, password);
+        toast.success("Logged in successfully");
+        navigate("/ride-selection");
       }
-      if (!formData.gender) {
-        toast.error('Please select your gender');
-        return;
+
+      // 📝 SIGNUP
+      else {
+        if (password !== confirmPassword) {
+          toast.error("Passwords do not match");
+          return;
+        }
+
+        const userCredential = await createUserWithEmailAndPassword(
+          auth,
+          email,
+          password
+        );
+
+        const user = userCredential.user;
+
+        // 🔥 Save user profile (institution logic comes later)
+        await setDoc(doc(db, "users", user.uid), {
+          uid: user.uid,
+          name,
+          email,
+          gender,
+          createdAt: serverTimestamp(),
+        });
+
+        toast.success("Account created successfully");
+        navigate("/ride-selection");
       }
-      
-      toast.success('Account created successfully!');
-      setIsLogin(true); // Switch to login view after signup
+    } catch (err) {
+      toast.error(err.message);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center px-6 py-12">
-      <div className="w-full max-w-md bg-white rounded-3xl shadow-xl p-8 border border-slate-100">
-        <div className="text-center mb-8">
-          <h2 className="text-3xl font-extrabold text-slate-900">
-            {isLogin ? 'Welcome Back' : 'Create Account'}
-          </h2>
-          <p className="text-slate-500 mt-2">Enter your institutional details to continue</p>
-        </div>
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center px-6">
+      <div className="w-full max-w-md bg-white p-8 rounded-3xl shadow-xl border">
+        <h2 className="text-3xl font-extrabold text-center mb-6">
+          {isLogin ? "Welcome Back" : "Create Account"}
+        </h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {!isLogin && (
             <>
-              {/* Full Name Field */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Full Name</label>
-                <input
-                  name="name"
-                  type="text"
-                  required
-                  placeholder="John Doe"
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500"
-                  onChange={handleInputChange}
-                />
-              </div>
+              <input
+                name="name"
+                placeholder="Full Name"
+                className="w-full px-4 py-3 rounded-xl border"
+                onChange={handleChange}
+                required
+              />
 
-              {/* Gender Dropdown Field */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Gender</label>
-                <select
-                  name="gender"
-                  required
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
-                  onChange={handleInputChange}
-                  value={formData.gender}
-                >
-                  <option value="" disabled>Select Gender</option>
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
-                  <option value="other">Other</option>
-                  <option value="prefer-not-to-say">Prefer not to say</option>
-                </select>
-              </div>
+              <select
+                name="gender"
+                className="w-full px-4 py-3 rounded-xl border bg-white"
+                onChange={handleChange}
+                required
+              >
+                <option value="">Select Gender</option>
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+                <option value="other">Other</option>
+              </select>
             </>
           )}
 
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1">Email</label>
-            <input
-              name="email"
-              type="email"
-              required
-              placeholder="name@university.edu"
-              className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500"
-              onChange={handleInputChange}
-            />
-          </div>
+          <input
+            name="email"
+            type="email"
+            placeholder="Institution Email"
+            className="w-full px-4 py-3 rounded-xl border"
+            onChange={handleChange}
+            required
+          />
 
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1">Password</label>
-            <input
-              name="password"
-              type="password"
-              required
-              placeholder="••••••••"
-              className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500"
-              onChange={handleInputChange}
-            />
-          </div>
+          <input
+            name="password"
+            type="password"
+            placeholder="Password"
+            className="w-full px-4 py-3 rounded-xl border"
+            onChange={handleChange}
+            required
+          />
 
           {!isLogin && (
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1">Confirm Password</label>
-              <input
-                name="confirmPassword"
-                type="password"
-                required
-                placeholder="••••••••"
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500"
-                onChange={handleInputChange}
-              />
-            </div>
+            <input
+              name="confirmPassword"
+              type="password"
+              placeholder="Confirm Password"
+              className="w-full px-4 py-3 rounded-xl border"
+              onChange={handleChange}
+              required
+            />
           )}
 
-          <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition shadow-lg active:scale-95">
-            {isLogin ? 'Login' : 'Create Account'}
+          <button
+            type="submit"
+            className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold hover:bg-emerald-700 transition"
+          >
+            {isLogin ? "Login" : "Create Account"}
           </button>
         </form>
 
-        <p className="mt-8 text-center text-sm text-slate-600">
-          {isLogin ? "Don't have an account?" : "Already have an account?"}{' '}
-          <button onClick={() => setIsLogin(!isLogin)} className="text-emerald-600 font-bold hover:underline">
-            {isLogin ? 'Sign Up' : 'Log In'}
+        <p className="text-center text-sm mt-6">
+          {isLogin ? "Don’t have an account?" : "Already have an account?"}{" "}
+          <button
+            onClick={() => setIsLogin(!isLogin)}
+            className="text-emerald-600 font-bold"
+          >
+            {isLogin ? "Sign Up" : "Login"}
           </button>
         </p>
       </div>
