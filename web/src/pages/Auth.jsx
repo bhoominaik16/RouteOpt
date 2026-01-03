@@ -1,171 +1,154 @@
-import React, { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "../firebase";
-import dashboardPreview from "../assets/LandingImage.png";
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import toast from "react-hot-toast";
 
-const Landing = () => {
-  const [user, setUser] = useState(null);
+// 🔥 Firebase
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { auth, db } from "../firebase";
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-    });
-    return () => unsubscribe();
-  }, []);
+const Auth = () => {
+  const navigate = useNavigate();
+  const [isLogin, setIsLogin] = useState(true);
 
-  const stats = [
-    {
-      label: "CO₂ Saved",
-      value: "1,284 kg",
-      icon: "🌱",
-      color: "text-emerald-500",
-    },
-    {
-      label: "Active Commuters",
-      value: "450+",
-      icon: "👥",
-      color: "text-blue-500",
-    },
-    {
-      label: "Partner Colleges",
-      value: "12",
-      icon: "🏛️",
-      color: "text-purple-500",
-    },
-  ];
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    gender: "",
+    password: "",
+    confirmPassword: "",
+  });
+
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    const { name, email, gender, password, confirmPassword } = formData;
+
+    try {
+      // 🔐 LOGIN
+      if (isLogin) {
+        await signInWithEmailAndPassword(auth, email, password);
+        toast.success("Logged in successfully");
+        navigate("/ride-selection");
+      }
+
+      // 📝 SIGNUP
+      else {
+        if (password !== confirmPassword) {
+          toast.error("Passwords do not match");
+          return;
+        }
+
+        const userCredential = await createUserWithEmailAndPassword(
+          auth,
+          email,
+          password
+        );
+
+        const user = userCredential.user;
+
+        // 🔥 Save user profile (institution logic comes later)
+        await setDoc(doc(db, "users", user.uid), {
+          uid: user.uid,
+          name,
+          email,
+          gender,
+          createdAt: serverTimestamp(),
+        });
+
+        toast.success("Account created successfully");
+        navigate("/ride-selection");
+      }
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
 
   return (
-    <div className="w-full bg-slate-50 text-slate-900 font-sans overflow-x-hidden">
-      {/* Background blobs */}
-      <div className="fixed inset-0 -z-10 pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-emerald-200/40 rounded-full blur-3xl animate-blob"></div>
-        <div className="absolute top-0 right-1/4 w-96 h-96 bg-blue-200/40 rounded-full blur-3xl animate-blob animation-delay-2000"></div>
-        <div className="absolute -bottom-32 left-1/3 w-96 h-96 bg-purple-200/40 rounded-full blur-3xl animate-blob animation-delay-4000"></div>
-      </div>
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center px-6">
+      <div className="w-full max-w-md bg-white p-8 rounded-3xl shadow-xl border">
+        <h2 className="text-3xl font-extrabold text-center mb-6">
+          {isLogin ? "Welcome Back" : "Create Account"}
+        </h2>
 
-      {/* HERO */}
-      <header className="relative pt-12 pb-20 px-6 max-w-7xl mx-auto grid lg:grid-cols-2 gap-16 items-center">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/80 border mb-8">
-            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span className="text-xs font-semibold uppercase text-slate-600">
-              Live at VESIT
-            </span>
-          </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {!isLogin && (
+            <>
+              <input
+                name="name"
+                placeholder="Full Name"
+                className="w-full px-4 py-3 rounded-xl border"
+                onChange={handleChange}
+                required
+              />
 
-          <h1 className="text-6xl lg:text-8xl font-black leading-[1] mb-6">
-            Commute <br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-teal-500">
-              With Purpose.
-            </span>
-          </h1>
-
-          <p className="text-xl text-slate-600 mb-10 max-w-lg">
-            The exclusive carpooling network for your organization. Verified
-            users, optimized routes, and real-time carbon tracking.
-          </p>
-
-          <div className="flex gap-4">
-            {user ? (
-              <Link
-                to="/"
-                className="px-8 py-4 bg-slate-900 text-white rounded-2xl font-bold text-lg shadow-xl hover:-translate-y-1 transition"
+              <select
+                name="gender"
+                className="w-full px-4 py-3 rounded-xl border bg-white"
+                onChange={handleChange}
+                required
               >
-                Go to Dashboard
-              </Link>
-            ) : (
-              <Link
-                to="/auth"
-                className="px-8 py-4 bg-slate-900 text-white rounded-2xl font-bold text-lg shadow-xl hover:-translate-y-1 transition"
-              >
-                Find a Ride
-              </Link>
-            )}
+                <option value="">Select Gender</option>
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+                <option value="other">Other</option>
+              </select>
+            </>
+          )}
 
-            <button className="px-8 py-4 rounded-2xl font-bold bg-white border shadow-sm hover:bg-slate-50 transition">
-              See How It Works
-            </button>
-          </div>
+          <input
+            name="email"
+            type="email"
+            placeholder="Institution Email"
+            className="w-full px-4 py-3 rounded-xl border"
+            onChange={handleChange}
+            required
+          />
 
-          <div className="mt-12 flex items-center gap-4 text-sm font-semibold text-slate-500">
-            <div className="flex -space-x-3">
-              {[1, 2, 3, 4].map((i) => (
-                <div
-                  key={i}
-                  className="w-10 h-10 rounded-full bg-slate-200 border-2 border-white"
-                />
-              ))}
-            </div>
-            <p>Trusted by 450+ students</p>
-          </div>
-        </div>
+          <input
+            name="password"
+            type="password"
+            placeholder="Password"
+            className="w-full px-4 py-3 rounded-xl border"
+            onChange={handleChange}
+            required
+          />
 
-        {/* Preview */}
-        <div className="relative">
-          <div className="absolute -inset-1 bg-gradient-to-r from-emerald-400 to-blue-500 blur opacity-30"></div>
-          <div className="relative bg-white rounded-3xl shadow-2xl p-4">
-            <img
-              src={dashboardPreview}
-              alt="Dashboard Preview"
-              className="rounded-xl w-full object-cover aspect-[4/3]"
+          {!isLogin && (
+            <input
+              name="confirmPassword"
+              type="password"
+              placeholder="Confirm Password"
+              className="w-full px-4 py-3 rounded-xl border"
+              onChange={handleChange}
+              required
             />
-          </div>
-        </div>
-      </header>
+          )}
 
-      {/* FEATURES */}
-      <section className="py-24 px-6 max-w-7xl mx-auto">
-        <div className="text-center max-w-3xl mx-auto mb-16">
-          <h2 className="text-4xl font-bold mb-6">
-            Everything you need for a{" "}
-            <span className="text-emerald-600">secure campus commute</span>
-          </h2>
-          <p className="text-lg text-slate-600">
-            Built exclusively for institutional safety, reliability, and trust.
-          </p>
-        </div>
+          <button
+            type="submit"
+            className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold hover:bg-emerald-700 transition"
+          >
+            {isLogin ? "Login" : "Create Account"}
+          </button>
+        </form>
 
-        <div className="grid md:grid-cols-3 gap-6">
-          <div className="md:col-span-2 bg-white rounded-3xl p-8 border shadow">
-            <h3 className="text-2xl font-bold mb-2">Domain-Locked Security</h3>
-            <p className="text-slate-600">
-              Access restricted to verified institutional email domains only.
-            </p>
-          </div>
-
-          <div className="row-span-2 bg-slate-900 rounded-3xl p-8 text-white">
-            <h3 className="text-2xl font-bold mb-4">Collective Impact</h3>
-            {stats.map((stat, i) => (
-              <div key={i} className="bg-slate-800 p-4 rounded-xl mb-3">
-                <div className="flex justify-between">
-                  <span>{stat.icon}</span>
-                  <span className={`font-bold ${stat.color}`}>
-                    {stat.value}
-                  </span>
-                </div>
-                <p className="text-xs uppercase text-slate-400">{stat.label}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="bg-pink-50 rounded-3xl p-8 border text-center">
-            <h3 className="text-xl font-bold mb-2">Women-First Filters</h3>
-            <p className="text-slate-600 text-sm">
-              Female riders can choose female-only ride visibility.
-            </p>
-          </div>
-
-          <div className="bg-white rounded-3xl p-8 border">
-            <h3 className="text-xl font-bold mb-2">Polyline Algorithm</h3>
-            <p className="text-slate-600 text-sm">
-              Matches rides along your route, not just start & end points.
-            </p>
-          </div>
-        </div>
-      </section>
+        <p className="text-center text-sm mt-6">
+          {isLogin ? "Don’t have an account?" : "Already have an account?"}{" "}
+          <button
+            onClick={() => setIsLogin(!isLogin)}
+            className="text-emerald-600 font-bold"
+          >
+            {isLogin ? "Sign Up" : "Login"}
+          </button>
+        </p>
+      </div>
     </div>
   );
 };
 
-export default Landing;
+export default Auth;
