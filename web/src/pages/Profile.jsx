@@ -49,12 +49,6 @@ const Profile = () => {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <main className="flex-grow max-w-7xl mx-auto w-full px-8 py-12">
-  
-        <div className="flex justify-end mb-4">
-          <button onClick={handleLogout} className="text-sm text-red-500 font-bold hover:underline">
-            Log Out
-          </button>
-        </div>
 
         <div className="grid lg:grid-cols-3 gap-8">
           
