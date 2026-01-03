@@ -174,26 +174,6 @@ const Landing = () => {
           />
         </div>
       </section>
-
-      {/* CTA */}
-      <section className="pb-32 px-6 max-w-7xl mx-auto">
-        <div className="bg-emerald-600 rounded-3xl p-12 md:p-16 text-center text-white">
-          <h2 className="text-4xl font-bold mb-4">
-            Ready to Transform Your Commute?
-          </h2>
-          <p className="text-emerald-100 max-w-2xl mx-auto mb-8">
-            Join verified commuters making daily travel safer, cheaper, and
-            greener.
-          </p>
-
-          <Link
-            to={user ? "/ride-selection" : "/auth"}
-            className="inline-block px-10 py-4 bg-white text-emerald-700 font-semibold rounded-xl hover:bg-slate-100 transition"
-          >
-            {user ? "Start Riding" : "Join Free"}
-          </Link>
-        </div>
-      </section>
     </div>
   );
 };

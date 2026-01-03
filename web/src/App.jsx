@@ -37,6 +37,7 @@ function App() {
         <Route path="/ride-giver" element={<RideGiver />} />
         <Route path="/ride-taker" element={<RideTaker />} />
         <Route path="/ride-giver-dashboard" element={<RideGiverDashboard />} />
+        <Route path="/ride-details" element={<RideDetails />} />
         <Route path="/admin" element={<AdminDashboard />} />
       </Routes>
       {!isAdminPage && user && <SOSButton user={user} />}
