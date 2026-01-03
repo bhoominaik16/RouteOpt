@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 import L from 'leaflet';
-import Navbar from '../components/common/Navbar';
 import toast from 'react-hot-toast';
 
 // Custom icons

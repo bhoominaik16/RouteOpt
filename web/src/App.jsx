@@ -9,7 +9,8 @@ import Profile from "./pages/Profile";
 import RideSelection from "./pages/RideSelection";
 import RideGiver from "./pages/RideGiver";
 import RideTaker from "./pages/RideTaker";
-
+import SOSButton from './components/SOSButton';
+import RideGiverDashboard from "./pages/RideGiverDashboard";
 
 function App() {
   const [user, setUser] = useState(JSON.parse(localStorage.getItem('user')));
@@ -18,6 +19,7 @@ function App() {
 
   useEffect(() => {
     const loggedInUser = JSON.parse(localStorage.getItem('user'));
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setUser(loggedInUser);
   }, [location]); 
 
@@ -25,14 +27,21 @@ function App() {
     <div className="min-h-screen flex flex-col">
       <Toaster position="top-center" reverseOrder={false} />
       <Navbar/>
-      <Routes className="flex-grow">
-        <Route path="/" element={<Landing />} />
-        <Route path="/auth" element={<Auth />} />
-        <Route path="/profile" element={<Profile />} />
-        <Route path="/ride-selection" element={<RideSelection />} />
-        <Route path="/ride-giver" element={<RideGiver />} />
-        <Route path="/ride-taker" element={<RideTaker />} />
-      </Routes>
+      
+      <main className="flex-grow">
+        <Routes>
+          <Route path="/" element={<Landing />} />
+          <Route path="/auth" element={<Auth />} />
+          <Route path="/profile" element={<Profile />} />
+          <Route path="/ride-selection" element={<RideSelection />} />
+          <Route path="/ride-giver" element={<RideGiver />} />
+          <Route path="/ride-taker" element={<RideTaker />} />
+          <Route path="/ride-giver-dashboard" element={<RideGiverDashboard />} />
+        </Routes>
+      </main>
+
+      {user && <SOSButton user={user} />}
+      
       <Footer/>
     </div>
   )
