@@ -12,6 +12,7 @@ import RideTaker from "./pages/RideTaker";
 import RideDetails from "./pages/RideDetails";
 import RideGiverDashboard from "./pages/RideGiverDashboard";
 import SOSButton from './components/SOSButton';
+import AdminDashboard from "./pages/AdminDashboard";
 
 function App() {
   const [user, setUser] = useState(JSON.parse(localStorage.getItem('user')));
@@ -23,10 +24,11 @@ function App() {
     setUser(loggedInUser);
   }, [location]);
 
+  const isAdminPage = location.pathname.startsWith('/admin');
   return (
     <div className="min-h-screen flex flex-col">
       <Toaster position="top-center" reverseOrder={false} />
-      <Navbar/>
+      {!isAdminPage && <Navbar/>}
       <Routes className="flex-grow">
         <Route path="/" element={<Landing />} />
         <Route path="/auth" element={<Auth />} />
@@ -35,9 +37,9 @@ function App() {
         <Route path="/ride-giver" element={<RideGiver />} />
         <Route path="/ride-taker" element={<RideTaker />} />
         <Route path="/ride-giver-dashboard" element={<RideGiverDashboard />} />
-        <Route path="/ride-details/:id" element={<RideDetails />} />
+        <Route path="/admin" element={<AdminDashboard />} />
       </Routes>
-      {user && <SOSButton user={user} />}
+      {!isAdminPage && user && <SOSButton user={user} />}
       <Footer/>
     </div>
   )
