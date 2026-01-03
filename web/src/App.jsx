@@ -2,14 +2,14 @@ import { Routes, Route, useLocation } from "react-router-dom"; // Added useLocat
 import { Toaster } from 'react-hot-toast';
 import { useState, useEffect } from 'react'; // Added imports
 import Landing from "./pages/Landing";
-import Navbar from "./components/common/Navbar";
-import Footer from "./components/common/Footer";
+import Navbar from "./components/Navbar";
+import Footer from "./components/Footer";
 import Auth from "./pages/Auth";
 import Profile from "./pages/Profile";
 import RideSelection from "./pages/RideSelection";
 import RideGiver from "./pages/RideGiver";
 import RideTaker from "./pages/RideTaker";
-import SOSButton from './components/common/SOSButton';
+import SOSButton from './components/SOSButton';
 
 function App() {
   const [user, setUser] = useState(JSON.parse(localStorage.getItem('user')));

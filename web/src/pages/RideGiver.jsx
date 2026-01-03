@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-leaflet';
 import L from 'leaflet';
-import Navbar from '../components/common/Navbar';
+import Navbar from '../components/Navbar';
 import toast from 'react-hot-toast';
 import axios from 'axios';
 
