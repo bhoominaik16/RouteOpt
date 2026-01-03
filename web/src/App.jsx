@@ -5,6 +5,9 @@ import Navbar from "./components/common/Navbar"
 import Footer from "./components/common/Footer"
 import Auth from "./pages/Auth"
 import Profile from "./pages/Profile";
+import RideSelection from "./pages/RideSelection";
+import RideGiver from "./pages/RideGiver";
+import RideTaker from "./pages/RideTaker";
 
 
 function App() {
@@ -13,13 +16,14 @@ function App() {
     <div className="min-h-screen flex flex-col">
       <Toaster position="top-center" reverseOrder={false} />
       <Navbar/>
-      <main className="flex-grow">
-        <Routes>
-          <Route path="/" element={<Landing />} />
-          <Route path="/auth" element={<Auth />} />
-          <Route path="/profile" element={<Profile />} />
-        </Routes>
-      </main>
+      <Routes className="flex-grow">
+        <Route path="/" element={<Landing />} />
+        <Route path="/auth" element={<Auth />} />
+        <Route path="/profile" element={<Profile />} />
+        <Route path="/ride-selection" element={<RideSelection />} />
+        <Route path="/ride-giver" element={<RideGiver />} />
+        <Route path="/ride-taker" element={<RideTaker />} />
+      </Routes>
       <Footer/>
     </div>
   )
