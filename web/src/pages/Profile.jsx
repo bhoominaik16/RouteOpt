@@ -1,131 +1,150 @@
-import React, { useState, useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { db } from "../firebase";
-import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
-} from "recharts";
+import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { db, storage } from '../firebase'; 
+import { collection, query, where, getDocs, orderBy, doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import toast from 'react-hot-toast';
 
 const Profile = () => {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   const [genderFilter, setGenderFilter] = useState(false);
 
-  // User State initialized from localStorage
+  // 1. Initialize User
   const [user, setUser] = useState(() => {
-    const savedUser = JSON.parse(localStorage.getItem("user"));
+    const savedUser = JSON.parse(localStorage.getItem('user'));
     return savedUser || null;
   });
 
-  // --- DEMO DATA (Fallback if Firebase is empty) ---
-  const DEMO_STATS = {
-    greenPoints: 1250,
-    co2Saved: "45.8",
-    ridesCompleted: 24,
-    rank: 12,
+  // 2. Initial Stats State
+  const INITIAL_STATS = { 
+    greenPoints: 0, 
+    co2Saved: '0.0', 
+    ridesCompleted: 0, 
+    rank: '-' 
   };
 
-  const DEMO_CHART = [
-    { name: "Oct", saved: 12.5 },
-    { name: "Nov", saved: 18.2 },
-    { name: "Dec", saved: 15.1 },
-    { name: "Jan", saved: 8.5 },
-  ];
-
-  const [stats, setStats] = useState(DEMO_STATS);
-  const [chartData, setChartData] = useState(DEMO_CHART);
+  const [stats, setStats] = useState(INITIAL_STATS);
+  const [chartData, setChartData] = useState([]); 
+  const [rideHistory, setRideHistory] = useState([]); // 🆕 Store list of past rides
   const [loading, setLoading] = useState(true);
 
-  // --- HYBRID FETCH: Real Data first, fallback to Demo ---
+  // --- REAL-TIME USER SYNC ---
+  useEffect(() => {
+    if (!user?.uid) return;
+    const userRef = doc(db, "users", user.uid);
+    const unsubscribe = onSnapshot(userRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const freshData = docSnap.data();
+        const updatedUser = { ...user, ...freshData };
+        setUser(updatedUser);
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+      }
+    });
+    return () => unsubscribe();
+  }, [user?.uid]);
+
+  // --- STATS & HISTORY FETCHING ---
   useEffect(() => {
     const fetchCarbonStats = async () => {
       if (!user) return;
-
+      
       try {
-        const q = query(
-          collection(db, "rides"),
-          where("driverId", "==", user.uid),
-          orderBy("createdAt", "desc")
-        );
-
+        // Query: Rides where I am the Driver, sorted by newest
+        const q = query(collection(db, "rides"), where("driverId", "==", user.uid), orderBy("createdAt", "desc"));
         const querySnapshot = await getDocs(q);
-
-        // IF NO REAL RIDES FOUND -> KEEP DEMO DATA
-        if (querySnapshot.empty) {
-          console.log("No real rides found, using Demo Data");
-          setLoading(false);
-          return;
+        
+        if (querySnapshot.empty) { 
+           setLoading(false);
+           return; 
         }
 
-        // IF REAL DATA EXISTS -> CALCULATE IT
         let totalDistance = 0;
         let totalRides = 0;
-        const monthlyData = {};
+        const monthlyData = {}; 
+        const history = []; // Temp array for the list
 
         querySnapshot.forEach((doc) => {
           const ride = doc.data();
-          const distance = parseFloat(ride.route?.distance || 0);
+          
+          // 🛡️ Safety: Ensure distance is a number
+          const distance = parseFloat(ride.distance || 0); 
+          
           totalDistance += distance;
           totalRides += 1;
 
+          // Add to History List
+          history.push({
+            id: doc.id,
+            ...ride,
+            date: ride.createdAt ? ride.createdAt.toDate().toLocaleDateString() : 'Unknown Date',
+            points: Math.round(distance * 10)
+          });
+
+          // Monthly Aggregation for Chart
           if (ride.createdAt) {
-            const date = ride.createdAt.toDate();
-            const month = date.toLocaleString("default", { month: "short" });
-            if (!monthlyData[month]) monthlyData[month] = 0;
-            monthlyData[month] += distance * 0.12;
+             const date = ride.createdAt.toDate();
+             const month = date.toLocaleString('default', { month: 'short' });
+             if (!monthlyData[month]) monthlyData[month] = 0;
+             monthlyData[month] += (distance * 0.12);
           }
         });
 
         const co2Total = (totalDistance * 0.12).toFixed(1);
         const points = Math.round(totalDistance * 10);
 
-        setStats({
-          greenPoints: points,
-          co2Saved: co2Total,
-          ridesCompleted: totalRides,
-          rank: points > 500 ? 5 : 120,
+        // Update State
+        setStats({ 
+            greenPoints: points, 
+            co2Saved: co2Total, 
+            ridesCompleted: totalRides, 
+            rank: points > 500 ? 'Elite' : 'Rookie' 
         });
+        
+        setRideHistory(history); // 🆕 Save the list
+        
+        setChartData(Object.keys(monthlyData).map(month => ({ 
+            name: month, 
+            saved: parseFloat(monthlyData[month].toFixed(1)) 
+        })));
 
-        const formattedChartData = Object.keys(monthlyData).map((month) => ({
-          name: month,
-          saved: parseFloat(monthlyData[month].toFixed(1)),
-        }));
-
-        setChartData(formattedChartData);
       } catch (error) {
-        console.error("Error fetching stats, using fallback:", error);
+        console.error("Error fetching stats:", error);
       } finally {
         setLoading(false);
       }
     };
-
     fetchCarbonStats();
-  }, [user]);
+  }, [user?.uid]);
 
-  // --- Helper Functions ---
-  const handleImageUpload = (event) => {
+  // --- IMAGE UPLOAD ---
+  const handleImageUpload = async (event) => {
     const file = event.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64Image = reader.result;
-        const updatedUser = { ...user, profileImage: base64Image };
+    if (!file) return;
 
-        // Update Local State
-        setUser(updatedUser);
-        // Sync with LocalStorage
-        localStorage.setItem("user", JSON.stringify(updatedUser));
+    const objectUrl = URL.createObjectURL(file);
+    setUser(prev => ({ ...prev, profileImage: objectUrl }));
+    
+    const toastId = toast.loading("Uploading image...");
 
-        // --- CRITICAL MERGE: Trigger event for Navbar sync ---
-        window.dispatchEvent(new Event("userUpdated"));
-      };
-      reader.readAsDataURL(file);
+    try {
+      const uniqueFileName = `profile_images/${user.uid}_${Date.now()}`;
+      const storageRef = ref(storage, uniqueFileName);
+
+      await uploadBytes(storageRef, file);
+      const downloadURL = await getDownloadURL(storageRef);
+
+      await updateDoc(doc(db, "users", user.uid), {
+        profileImage: downloadURL
+      });
+      
+      window.dispatchEvent(new Event("userUpdated"));
+      toast.success("Profile Updated!", { id: toastId });
+
+    } catch (error) {
+      console.error("Upload Error:", error);
+      toast.error("Upload failed.", { id: toastId });
     }
   };
 
@@ -133,336 +152,158 @@ const Profile = () => {
     fileInputRef.current.click();
   };
 
-  if (!user)
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-emerald-50 to-slate-50 flex items-center justify-center">
-        <div className="text-center p-12 bg-white rounded-3xl shadow-xl border border-slate-100">
-          <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg
-              className="w-10 h-10 text-emerald-600"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-              />
-            </svg>
-          </div>
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">
-            Authentication Required
-          </h2>
-          <p className="text-slate-600">Please log in to view your profile</p>
-        </div>
-      </div>
-    );
+  if (!user) return <div className="p-10 text-center">Please log in.</div>;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-emerald-50/30 to-blue-50/20">
-      {/* Decorative Background Elements */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-emerald-200/20 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-blue-200/20 rounded-full blur-3xl"></div>
-      </div>
-
-      <main className="relative z-10 flex-grow max-w-7xl mx-auto w-full px-6 py-12">
+    <div className="min-h-screen bg-slate-50 flex flex-col">
+      <main className="flex-grow max-w-7xl mx-auto w-full px-6 py-12">
         <div className="grid lg:grid-cols-3 gap-8">
-          {/* --- LEFT COLUMN: Profile Card --- */}
+          
+          {/* LEFT COLUMN: User Info */}
           <div className="space-y-6">
-            <div className="bg-white/80 backdrop-blur-xl p-8 rounded-3xl shadow-lg border border-white/60 text-center relative overflow-hidden group hover:shadow-2xl transition-all duration-300">
-              <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-blue-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-
-              <div className="relative mx-auto w-32 h-32 mb-6 z-10">
-                <div className="w-32 h-32 rounded-full overflow-hidden shadow-2xl border-4 border-white ring-4 ring-emerald-100/50 group-hover:ring-emerald-200 transition-all duration-300">
+            <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 text-center relative">
+               <div className="relative mx-auto w-28 h-28 mb-4">
+                <div className="w-28 h-28 rounded-full overflow-hidden shadow-lg border-4 border-emerald-50 bg-slate-100">
                   {user.profileImage ? (
-                    <img
-                      src={user.profileImage}
-                      alt="Profile"
-                      className="w-full h-full object-cover"
-                    />
+                    <img src={user.profileImage} alt="Profile" className="w-full h-full object-cover" />
                   ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white text-4xl font-bold uppercase">
-                      {user.name ? user.name[0] : "U"}
+                    <div className="w-full h-full bg-emerald-600 flex items-center justify-center text-white text-4xl font-bold uppercase">
+                      {user.name ? user.name[0] : 'U'}
                     </div>
                   )}
                 </div>
-                <button
-                  onClick={triggerFileInput}
-                  className="absolute bottom-1 right-1 bg-gradient-to-br from-slate-900 to-slate-800 text-white p-2.5 rounded-full shadow-lg hover:scale-110 transition-transform ring-4 ring-white"
-                >
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
-                    />
-                  </svg>
+                <button onClick={triggerFileInput} className="absolute bottom-0 right-0 bg-slate-900 text-white p-2 rounded-full shadow-md hover:bg-slate-700 transition-colors">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                 </button>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleImageUpload}
-                  accept="image/*"
-                  className="hidden"
-                />
+                <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
               </div>
 
-              <div className="relative z-10">
-                <h2 className="text-2xl font-bold text-slate-900 mb-1">
-                  {user.name}
-                </h2>
-                <p className="text-slate-500 mb-6 text-sm">{user.email}</p>
-                <div className="inline-flex items-center gap-2 px-5 py-2 bg-gradient-to-r from-emerald-50 to-emerald-100/50 text-emerald-700 rounded-full text-sm font-bold border border-emerald-200/50 shadow-sm">
-                  <svg
-                    className="w-4 h-4"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                  Verified Member
-                </div>
-              </div>
+              <h2 className="text-2xl font-bold text-slate-900">{user.name}</h2>
+              <p className="text-slate-500 mb-4">{user.email}</p>
+              <div className="inline-block px-4 py-1.5 bg-emerald-50 text-emerald-700 rounded-full text-sm font-bold border border-emerald-100">Verified Member</div>
             </div>
 
             {/* Safety Toggle */}
-            <div className="bg-white/80 backdrop-blur-xl p-6 rounded-3xl shadow-lg border border-white/60 hover:shadow-xl transition-all duration-300">
-              <h3 className="font-bold text-slate-900 mb-5 flex items-center gap-2.5">
-                <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-md">
-                  <svg
-                    className="w-5 h-5 text-white"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-                    />
-                  </svg>
-                </div>
-                <span className="text-lg">Safety Preferences</span>
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+              <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                Safety Preferences
               </h3>
-              <div className="flex items-center justify-between p-4 bg-gradient-to-r from-slate-50 to-transparent rounded-2xl border border-slate-100">
+              <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-slate-800">
-                    Same-Gender Only
-                  </p>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Match with {user.gender || "same-gender"} only
-                  </p>
+                  <p className="text-sm font-semibold text-slate-700">Same-Gender Only</p>
+                  <p className="text-xs text-slate-400">Match with {user.gender || 'same-gender'} only</p>
                 </div>
-                <button
-                  onClick={() => setGenderFilter(!genderFilter)}
-                  className={`w-14 h-7 rounded-full transition-all duration-300 relative shadow-inner ${
-                    genderFilter
-                      ? "bg-gradient-to-r from-emerald-500 to-emerald-600"
-                      : "bg-slate-200"
-                  }`}
-                >
-                  <div
-                    className={`absolute top-0.5 w-6 h-6 bg-white rounded-full transition-all duration-300 shadow-md ${
-                      genderFilter ? "left-7" : "left-0.5"
-                    }`}
-                  />
+                <button onClick={() => setGenderFilter(!genderFilter)} className={`w-12 h-6 rounded-full transition-colors relative ${genderFilter ? 'bg-emerald-600' : 'bg-slate-200'}`}>
+                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${genderFilter ? 'left-7' : 'left-1'}`} />
                 </button>
               </div>
             </div>
           </div>
 
-          {/* --- RIGHT COLUMN: Stats & Graphs --- */}
+          {/* RIGHT COLUMN: Stats */}
           <div className="lg:col-span-2 space-y-8">
-            <div className="grid md:grid-cols-3 gap-5">
-              {/* Green Points */}
-              <div className="bg-gradient-to-br from-emerald-600 via-emerald-500 to-emerald-600 p-7 rounded-3xl text-white shadow-2xl relative overflow-hidden group hover:scale-105 transition-transform">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-8 -mt-8 group-hover:scale-150 transition-transform duration-700"></div>
-                <div className="relative z-10">
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-3xl">🌱</span>
-                    <p className="text-emerald-100 text-xs font-bold uppercase tracking-widest">
-                      Green Points
-                    </p>
-                  </div>
-                  <h4 className="text-5xl font-black mb-2">
-                    {stats.greenPoints}
-                  </h4>
-                  <p className="text-xs font-semibold">Lifetime Total</p>
-                </div>
+            <div className="grid md:grid-cols-3 gap-4">
+              <div className="bg-emerald-600 p-6 rounded-3xl text-white shadow-lg shadow-emerald-100 relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-4 opacity-10 text-6xl">🌱</div>
+                <p className="text-emerald-100 text-sm font-medium uppercase tracking-wider mb-1">Green Points</p>
+                <h4 className="text-4xl font-black">{stats.greenPoints}</h4>
               </div>
+              
+              
 
-              {/* CO2 Offset */}
-              <div className="bg-white/80 backdrop-blur-xl p-7 rounded-3xl border border-white/60 shadow-xl relative overflow-hidden group">
-                <div className="absolute top-0 right-0 w-28 h-28 bg-gradient-to-br from-blue-100 to-sky-100 rounded-full -mr-10 -mt-10 opacity-60"></div>
-                <div className="relative z-10">
-                  <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-3">
-                    CO₂ Offset
-                  </p>
-                  <div className="flex items-baseline gap-2 mb-2">
-                    <h4 className="text-5xl font-black text-slate-900">
-                      {stats.co2Saved}
-                    </h4>
-                    <span className="text-lg font-bold text-slate-500">kg</span>
-                  </div>
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-gradient-to-r from-emerald-50 to-emerald-100 rounded-full">
-                    <span className="text-emerald-600 text-xl">🌳</span>
-                    <p className="text-xs font-bold text-emerald-700">
-                      {Math.ceil(parseFloat(stats.co2Saved) * 2)} trees planted
-                    </p>
-                  </div>
-                </div>
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm relative">
+                <p className="text-slate-400 text-sm font-medium uppercase tracking-wider mb-1">CO₂ Offset</p>
+                <div className="flex items-baseline gap-1"><h4 className="text-4xl font-black text-slate-900">{stats.co2Saved}</h4><span className="text-sm font-bold text-slate-500">kg</span></div>
               </div>
-
-              {/* Rank */}
-              <div className="bg-white/80 backdrop-blur-xl p-7 rounded-3xl border border-white/60 shadow-xl relative overflow-hidden group">
-                <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-3">
-                  Org Rank
-                </p>
-                <h4 className="text-5xl font-black text-slate-900 mb-2">
-                  #{stats.rank}
-                </h4>
-                <p className="text-xs font-semibold text-slate-600">
-                  Top 15% of Commuters
-                </p>
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                <p className="text-slate-400 text-sm font-medium uppercase tracking-wider mb-1">Org Rank</p>
+                <h4 className="text-4xl font-black text-slate-900">#{stats.rank}</h4>
               </div>
             </div>
 
-            {/* Chart Section */}
-            <div className="bg-white/80 backdrop-blur-xl p-8 rounded-3xl shadow-xl border border-white/60">
-              <h3 className="font-bold text-slate-900 text-xl flex items-center gap-2 mb-8">
-                <span className="text-2xl">📊</span> Emission Savings Trend
-              </h3>
+            {/* CHART */}
+            <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
+              <h3 className="font-bold text-slate-900 text-lg mb-6">Emission Savings Trend</h3>
               <div className="h-64 w-full">
                 {loading ? (
-                  <div className="h-full flex flex-col items-center justify-center gap-3">
-                    <div className="w-12 h-12 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin"></div>
-                    <p className="text-slate-400 text-sm font-medium">
-                      Loading Chart Data...
-                    </p>
-                  </div>
+                    <div className="h-full flex items-center justify-center text-slate-400 animate-pulse">Calculating Impact...</div>
+                ) : chartData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#94a3b8' }} dy={10} />
+                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#94a3b8' }} />
+                        <Tooltip cursor={{ fill: '#f1f5f9', radius: 4 }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                        <Bar dataKey="saved" radius={[4, 4, 0, 0]} barSize={40}>
+                            {chartData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.saved > 5 ? '#10b981' : '#cbd5e1'} />))}
+                        </Bar>
+                        </BarChart>
+                    </ResponsiveContainer>
                 ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={chartData}
-                      margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-                    >
-                      <XAxis
-                        dataKey="name"
-                        axisLine={false}
-                        tickLine={false}
-                        tick={{
-                          fontSize: 12,
-                          fill: "#94a3b8",
-                          fontWeight: 600,
-                        }}
-                        dy={10}
-                      />
-                      <YAxis
-                        axisLine={false}
-                        tickLine={false}
-                        tick={{
-                          fontSize: 12,
-                          fill: "#94a3b8",
-                          fontWeight: 600,
-                        }}
-                      />
-                      <Tooltip
-                        cursor={{ fill: "#f1f5f9", radius: 8 }}
-                        contentStyle={{
-                          borderRadius: "16px",
-                          border: "none",
-                          boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)",
-                          background: "rgba(255, 255, 255, 0.95)",
-                        }}
-                      />
-                      <Bar dataKey="saved" radius={[8, 8, 0, 0]} barSize={48}>
-                        {chartData.map((entry, index) => (
-                          <Cell
-                            key={`cell-${index}`}
-                            fill={
-                              entry.saved > 5
-                                ? "url(#greenGradient)"
-                                : "#cbd5e1"
-                            }
-                          />
-                        ))}
-                      </Bar>
-                      <defs>
-                        <linearGradient
-                          id="greenGradient"
-                          x1="0"
-                          y1="0"
-                          x2="0"
-                          y2="1"
-                        >
-                          <stop offset="0%" stopColor="#10b981" />
-                          <stop offset="100%" stopColor="#059669" />
-                        </linearGradient>
-                      </defs>
-                    </BarChart>
-                  </ResponsiveContainer>
+                    <div className="h-full flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-100 rounded-xl">
+                        <span className="text-3xl mb-2">📉</span>
+                        <p>No ride data yet. Start sharing rides!</p>
+                    </div>
                 )}
               </div>
             </div>
 
-            {/* Rewards Progress */}
-            <div className="bg-white/80 backdrop-blur-xl p-8 rounded-3xl shadow-xl border border-white/60">
-              <h3 className="font-bold text-slate-900 mb-6 text-xl flex items-center gap-2">
-                <span className="text-2xl">🎁</span> Unlockable Rewards
-              </h3>
-              <div className="flex items-center gap-6 p-6 bg-gradient-to-r from-emerald-50 to-transparent rounded-2xl border border-emerald-200/50 shadow-sm">
-                <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-3xl shadow-lg border border-emerald-100">
-                  🅿️
-                </div>
-                <div className="flex-grow">
-                  <div className="flex justify-between items-end mb-3">
-                    <div>
-                      <h4 className="font-bold text-emerald-900 text-lg">
-                        Reserved Parking Spot
-                      </h4>
-                      <p className="text-xs text-emerald-600/80 font-medium">
-                        Next Tier Reward
-                      </p>
+            {/* 👇 NEW SECTION: Recent Activity (Past Rides) */}
+            
+            <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
+                <h3 className="font-bold text-slate-900 mb-6 flex items-center gap-2">
+                   <span>📜</span> Recent Ride History
+                </h3>
+                
+                {rideHistory.length === 0 ? (
+                    <p className="text-slate-400 text-sm">No rides found. Try posting a ride!</p>
+                ) : (
+                    <div className="space-y-4">
+                        {rideHistory.map((ride) => (
+                            <div key={ride.id} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl hover:bg-emerald-50 transition border border-transparent hover:border-emerald-100">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-lg shadow-sm">🚗</div>
+                                    <div>
+                                        <h4 className="font-bold text-slate-900 text-sm">{ride.destination}</h4>
+                                        <p className="text-xs text-slate-500">{ride.date}</p>
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <p className="font-black text-emerald-600">+{ride.points} pts</p>
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase">{ride.distance} km</p>
+                                </div>
+                            </div>
+                        ))}
                     </div>
-                    <span className="text-2xl font-black text-emerald-600">
-                      {Math.min(
-                        100,
-                        Math.round((stats.greenPoints / 2000) * 100)
-                      )}
-                      %
-                    </span>
+                )}
+            </div>
+
+            {/* Rewards */}
+            <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
+              <h3 className="font-bold text-slate-900 mb-6">Unlockable Rewards</h3>
+              <div className="flex items-center gap-6 p-4 bg-gradient-to-r from-emerald-50 to-white rounded-2xl border border-emerald-100">
+                <div className="w-14 h-14 bg-white rounded-xl flex items-center justify-center text-2xl shadow-sm border border-slate-50">🎁</div>
+                <div className="flex-grow">
+                  <div className="flex justify-between items-end mb-2">
+                      <div>
+                        <h4 className="font-bold text-emerald-900 tracking-tight">Reserved Parking Spot</h4>
+                        <p className="text-xs text-emerald-600/80">Next Tier Reward</p>
+                      </div>
+                      <span className="text-lg font-black text-emerald-600">
+                        {Math.min(100, Math.round((stats.greenPoints / 2000) * 100))}%
+                      </span>
                   </div>
-                  <div className="w-full h-4 bg-emerald-100/50 rounded-full overflow-hidden shadow-inner">
-                    <div
-                      className="h-full bg-emerald-500 rounded-full transition-all duration-1000"
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          (stats.greenPoints / 2000) * 100
-                        )}%`,
-                      }}
+                  <div className="w-full h-3 bg-emerald-100/50 rounded-full overflow-hidden">
+                    <div 
+                        className="h-full bg-emerald-500 rounded-full transition-all duration-1000 ease-out" 
+                        style={{ width: `${Math.min(100, (stats.greenPoints / 2000) * 100)}%` }}
                     />
                   </div>
-                  <p className="text-xs text-slate-500 mt-3 text-right font-semibold">
-                    {2000 - stats.greenPoints} more points needed
-                  </p>
+                  <p className="text-xs text-slate-400 mt-2 text-right">{Math.max(0, 2000 - stats.greenPoints)} more points needed</p>
                 </div>
               </div>
             </div>
+
           </div>
         </div>
       </main>

@@ -1,53 +1,127 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom'; // 1. Import useNavigate
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
+// 🔥 Firebase Imports
+import { db } from '../firebase';
+import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+
 const RideTaker = () => {
-  const navigate = useNavigate(); // 2. Initialize navigate
+  const navigate = useNavigate();
+  
+  // 1. Get Current User (Taker)
+  const [user] = useState(() => JSON.parse(localStorage.getItem('user')) || null);
+
   const [searching, setSearching] = useState(false);
+  const [rides, setRides] = useState([]); // Stores the fetched rides
+  const [loading, setLoading] = useState(false);
+
   const [filters, setFilters] = useState({
     source: '',
     destination: '',
     timeMode: 'immediate',
     scheduledTime: '',
-    routeChoice: 'fastest',
     genderPreference: false,
     sameInstitution: false 
   });
 
-  // Mock Data
-  const availableRides = [
-    {
-      id: 1,
-      giverName: "Aditi Sharma",
-      gender: "Female",
-      verified: true,
-      source: "Andheri West",
-      destination: "IIT Bombay",
-      time: "10:30 AM",
-      totalSeats: 4,
-      bookedSeats: 2,
-    },
-    {
-      id: 2,
-      giverName: "Rahul Verma",
-      gender: "Male",
-      verified: true,
-      source: "Borivali",
-      destination: "Corporate Hub",
-      time: "09:00 AM",
-      totalSeats: 3,
-      bookedSeats: 1,
-    }
-  ];
+  // --- HELPER: Get Email Domain (e.g., 'ves.ac.in') ---
+  const getDomain = (email) => {
+    if (!email) return "";
+    return email.split('@')[1].toLowerCase();
+  };
 
-  const handleSearch = () => {
+  const handleSearch = async () => {
+    if (!user) {
+        toast.error("Please login to search for rides");
+        navigate('/auth');
+        return;
+    }
     if (!filters.source || !filters.destination) {
       toast.error("Please enter source and destination");
       return;
     }
+
     setSearching(true);
-    toast.success("Finding optimized matches...");
+    setLoading(true);
+    toast.loading("Finding optimized matches...", { duration: 2000 });
+
+    try {
+      // 1. Fetch ALL Active Rides
+      // (In a real app, you'd filter by location here, but for now we fetch all and filter in JS)
+      const q = query(
+        collection(db, "rides"), 
+        where("status", "==", "ACTIVE"),
+        orderBy("createdAt", "desc")
+      );
+      
+      const querySnapshot = await getDocs(q);
+      const fetchedRides = [];
+      const takerDomain = getDomain(user.email);
+
+      querySnapshot.forEach((doc) => {
+        const ride = { id: doc.id, ...doc.data() };
+        const giverDomain = getDomain(ride.driverEmail);
+        const isSameOrg = takerDomain === giverDomain;
+
+        // --- 🛑 LOGIC 1: Exclude rides where Giver wants ONLY same org ---
+        if (ride.sameInstitution && !isSameOrg) {
+            return; // Skip this ride, the Taker is not eligible
+        }
+
+        // --- 🛑 LOGIC 2: Taker's Own Filters ---
+        // A. Taker wants Same Institution Only
+        if (filters.sameInstitution && !isSameOrg) {
+            return; 
+        }
+
+        // B. Taker wants Same Gender Only
+        // (Assuming user.gender and ride.driverGender exist. If not, we skip strict check)
+        if (filters.genderPreference && user.gender) {
+             // If ride doesn't have gender data, we usually exclude it or be lenient. 
+             // Here we assume strict matching if data exists.
+             if (ride.driverGender && ride.driverGender.toLowerCase() !== user.gender.toLowerCase()) {
+                 return;
+             }
+        }
+
+        // --- 🔍 LOGIC 3: Text Search Matching (Simple Includes) ---
+        // We check if the ride's source/dest vaguely matches what Taker typed
+        const searchSrc = filters.source.toLowerCase();
+        const searchDest = filters.destination.toLowerCase();
+        const rideSrc = ride.source.toLowerCase();
+        const rideDest = ride.destination.toLowerCase();
+
+        // Allow match if search term is found in ride details
+        if (rideSrc.includes(searchSrc) || rideDest.includes(searchDest)) {
+            // Add a flag for sorting later
+            ride.isSameOrg = isSameOrg; 
+            fetchedRides.push(ride);
+        }
+      });
+
+      // --- 📊 LOGIC 4: Sorting (Priority to Same Org) ---
+      fetchedRides.sort((a, b) => {
+        // If 'a' is same org and 'b' is not, 'a' comes first (-1)
+        if (a.isSameOrg && !b.isSameOrg) return -1;
+        if (!a.isSameOrg && b.isSameOrg) return 1;
+        return 0; // Otherwise keep original order (by time)
+      });
+
+      setRides(fetchedRides);
+
+      if (fetchedRides.length === 0) {
+          toast.error("No rides found for this route.");
+      } else {
+          toast.success(`Found ${fetchedRides.length} rides!`);
+      }
+
+    } catch (error) {
+      console.error("Search Error:", error);
+      toast.error("Failed to fetch rides.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -126,9 +200,10 @@ const RideTaker = () => {
 
               <button 
                 onClick={handleSearch}
-                className="w-full bg-slate-900 text-md text-white font-bold py-4 rounded-2xl hover:bg-slate-800 transition shadow-xl active:scale-95 mt-4"
+                disabled={loading}
+                className="w-full bg-slate-900 text-md text-white font-bold py-4 rounded-2xl hover:bg-slate-800 transition shadow-xl active:scale-95 mt-4 disabled:bg-slate-400"
               >
-                Find Best Matches
+                {loading ? "Searching..." : "Find Best Matches"}
               </button>
             </div>
           </div>
@@ -143,26 +218,45 @@ const RideTaker = () => {
             </div>
           ) : (
             <div className="grid gap-6 animate-in fade-in slide-in-from-right-4 duration-500">
-              {availableRides.map((ride) => (
-                <div key={ride.id} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:shadow-xl transition-all group">
+              {rides.length === 0 && !loading && (
+                 <div className="text-center p-10 text-slate-500">No rides found matching your criteria.</div>
+              )}
+              
+              {rides.map((ride) => (
+                <div key={ride.id} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:shadow-xl transition-all group relative overflow-hidden">
+                  
+                  {/* Priority Badge for Same Org */}
+                  {ride.isSameOrg && (
+                    <div className="absolute top-0 right-0 bg-blue-600 text-white text-xs font-bold px-3 py-1 rounded-bl-xl shadow-sm z-10">
+                        SAME ORGANIZATION
+                    </div>
+                  )}
+
                   <div className="flex flex-col md:flex-row justify-between gap-6">
                     
                     {/* Ride Giver Info */}
                     <div className="flex gap-4">
-                      <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center text-2xl shadow-inner border border-white">👤</div>
+                      <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center text-2xl shadow-inner border border-white overflow-hidden">
+                        {ride.driverImage ? (
+                            <img src={ride.driverImage} alt={ride.driverName} className="w-full h-full object-cover" />
+                        ) : (
+                            "👤"
+                        )}
+                      </div>
                       <div>
                         <div className="flex items-center gap-1">
-                          <h4 className="font-bold text-slate-900 text-lg">{ride.giverName}</h4>
-                          {ride.verified && (
-                            <span className="text-blue-500" title="Verified Member">
+                          <h4 className="font-bold text-slate-900 text-lg">{ride.driverName}</h4>
+                          <span className="text-blue-500" title="Verified Member">
                               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" /></svg>
-                            </span>
-                          )}
+                          </span>
                         </div>
-                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{ride.gender} • Institute Staff</p>
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                            {ride.driverGender || "Not Specified"} • {ride.isSameOrg ? "Colleague / Peer" : "External"}
+                        </p>
                         <div className="mt-3 flex gap-1.5">
-                          {[...Array(ride.totalSeats)].map((_, i) => (
-                            <div key={i} className={`w-7 h-7 rounded-lg flex items-center justify-center text-[11px] border ${i < ride.bookedSeats ? 'bg-emerald-100 text-emerald-600 border-emerald-200' : 'bg-slate-50 text-slate-300 border-slate-100'}`}>
+                          {/* Render Seats */}
+                          {[...Array(ride.seatsAvailable || 1)].map((_, i) => (
+                            <div key={i} className={`w-7 h-7 rounded-lg flex items-center justify-center text-[11px] border bg-slate-50 text-slate-300 border-slate-100`}>
                               👤
                             </div>
                           ))}
@@ -180,14 +274,17 @@ const RideTaker = () => {
                         <div className="w-2.5 h-2.5 rounded-full bg-slate-300 mt-1.5 ring-4 ring-slate-100" />
                         <p className="text-sm font-black text-slate-900 tracking-tight">{ride.destination}</p>
                       </div>
+                      <div className="mt-4 flex gap-4 text-xs text-slate-500 font-medium">
+                         <span>📏 {ride.distance} km</span>
+                         <span>⏱ {ride.duration} mins</span>
+                      </div>
                     </div>
 
                     {/* Time & Action */}
                     <div className="text-right flex flex-col justify-between items-end min-w-[120px]">
                       <div className="bg-emerald-50 text-emerald-700 px-4 py-1.5 rounded-xl text-sm font-black shadow-sm border border-emerald-100">
-                        {ride.time}
+                        {ride.departureTime === 'NOW' ? 'Leaving Now' : new Date(ride.departureTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </div>
-                      {/* 3. Changed button to Text Link with Navigation */}
                       <button 
                         onClick={() => navigate(`/ride-details/${ride.id}`)}
                         className="text-emerald-600 font-bold text-sm hover:text-emerald-700 transition-colors flex items-center gap-1 group-hover:translate-x-1 duration-300"
