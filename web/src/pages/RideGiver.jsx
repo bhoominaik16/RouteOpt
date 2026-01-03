@@ -162,6 +162,7 @@ const RideGiver = () => {
       });
 
       toast.success("Ride posted successfully!");
+    // eslint-disable-next-line no-unused-vars
     } catch (err) {
       toast.error("Failed to post ride");
     }

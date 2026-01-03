@@ -7,6 +7,7 @@ import { collection, getDocs } from "firebase/firestore";
 import { auth, db } from "../firebase";
 
 const RideTaker = () => {
+  // eslint-disable-next-line no-unused-vars
   const [user, setUser] = useState(null);
   const [searching, setSearching] = useState(false);
   const [rides, setRides] = useState([]);
@@ -48,6 +49,7 @@ const RideTaker = () => {
 
       setRides(fetchedRides);
       toast.success("Matching rides found");
+    // eslint-disable-next-line no-unused-vars
     } catch (err) {
       toast.error("Failed to fetch rides");
     }
