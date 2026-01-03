@@ -7,8 +7,11 @@ import dashboardPreview from "../assets/LandingImage.png";
 const Landing = () => {
   const [user, setUser] = useState(null);
 
+  // 🔐 Firebase Auth Listener
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, setUser);
+    const unsub = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
     return () => unsub();
   }, []);
 
@@ -30,7 +33,6 @@ const Landing = () => {
       <header className="pt-24 pb-32 px-6 max-w-7xl mx-auto grid lg:grid-cols-2 gap-20 items-center">
         {/* LEFT */}
         <div className="space-y-8">
-          {/* Soft trust badge */}
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/80 backdrop-blur border shadow-sm">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             <span className="text-xs font-semibold tracking-wide text-slate-600">
@@ -64,7 +66,6 @@ const Landing = () => {
             </button>
           </div>
 
-          {/* Soft credibility row */}
           <div className="flex gap-6 text-sm text-slate-500 font-medium">
             <span>✔ Verified users only</span>
             <span>✔ Real route matching</span>
@@ -84,7 +85,6 @@ const Landing = () => {
             />
           </div>
 
-          {/* Floating stat */}
           <div className="absolute -bottom-6 -left-6 bg-white p-4 rounded-2xl shadow-xl border flex items-center gap-3">
             <div className="text-2xl">🌍</div>
             <div>
@@ -99,7 +99,7 @@ const Landing = () => {
         </div>
       </header>
 
-      {/* STATS STRIP */}
+      {/* STATS */}
       <section className="pb-28 px-6 max-w-7xl mx-auto">
         <div className="grid md:grid-cols-3 gap-6">
           {stats.map((s, i) => (
@@ -122,9 +122,21 @@ const Landing = () => {
       {/* FEATURES */}
       <section className="pb-32 px-6 max-w-7xl mx-auto">
         <div className="grid md:grid-cols-3 gap-8">
-          <Feature icon="🛡️" title="Trust-First Design" desc="Built for communities where safety and verification matter." />
-          <Feature icon="👩‍🎓" title="Personalized Matching" desc="Filters that adapt to comfort and safety preferences." />
-          <Feature icon="📍" title="Route Intelligence" desc="Matches based on real routes, not just locations." />
+          <Feature
+            icon="🛡️"
+            title="Trust-First Design"
+            desc="Built for communities where safety and verification matter."
+          />
+          <Feature
+            icon="👩‍🎓"
+            title="Personalized Matching"
+            desc="Filters that adapt to comfort and safety preferences."
+          />
+          <Feature
+            icon="📍"
+            title="Route Intelligence"
+            desc="Matches based on real routes, not just locations."
+          />
         </div>
       </section>
     </div>

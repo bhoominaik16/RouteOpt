@@ -150,19 +150,27 @@ const RideGiver = () => {
       await addDoc(collection(db, "rides"), {
         driverId: user.uid,
         driverEmail: user.email,
+
         source: exactNames.src,
         destination: exactNames.dest,
+
         route: formData.selectedRoute,
         seats: formData.seats,
+
         genderPreference: formData.genderPreference,
         sameInstitution: formData.sameInstitution,
+
+        institutionDomain: user.email.split("@")[1],
+
         departure:
           formData.timeMode === "immediate" ? "now" : formData.scheduledTime,
+
+        status: "open",
         createdAt: serverTimestamp(),
       });
 
       toast.success("Ride posted successfully!");
-    // eslint-disable-next-line no-unused-vars
+      // eslint-disable-next-line no-unused-vars
     } catch (err) {
       toast.error("Failed to post ride");
     }
