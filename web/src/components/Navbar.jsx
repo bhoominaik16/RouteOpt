@@ -36,11 +36,17 @@ const Navbar = () => {
   const handleLogout = async () => {
     try {
       await signOut(auth);
+
+      localStorage.removeItem('user'); 
+
+      window.dispatchEvent(new Event("storage"));
+
       toast.success('Logged out successfully');
       setShowDropdown(false);
       navigate('/auth');
-    // eslint-disable-next-line no-unused-vars
+      
     } catch (error) {
+      console.error(error);
       toast.error("Error logging out");
     }
   };
