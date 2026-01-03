@@ -1,4 +1,4 @@
-# 📍 RouteOpt: The Secure Commute Ecosystem
+# 📍 RouteOpt : The Secure Commute Ecosystem
 
 > **A closed-network carpooling platform designed exclusively for organizations.** > *Secure. Verified. Sustainable.*
 
@@ -12,16 +12,16 @@ Traffic congestion and unsafe public commuting are major issues for students and
 ## 🚀 Key Features (Why We Win)
 
 ### 🔒 1. Domain-Locked Security
-* **Zero External Intrusion:** Access is strictly gated by institutional email domains.
-* **Auto-Segmentation:** Users from "College A" can never see rides from "Company B."
+* **Zero External Intrusion :** Access is strictly gated by institutional email domains.
+* **Auto-Segmentation :** Users from "College A" can never see rides from "Company B."
 
 ### 🗺️ 2. Polyline Route Intelligence
-* **Beyond Endpoints:** We don't just match `Start` and `End`. Our algorithm buffers the driver's **actual route path** to find passengers along the way (Deviation Logic).
-* **Visual Mapping:** Real-time route visualization using Mapbox/Google Maps.
+* **Beyond Endpoints :** We don't just match `Start` and `End`. Our algorithm buffers the driver's **actual route path** to find passengers along the way (Deviation Logic).
+* **Visual Mapping :** Real-time route visualization using Mapbox/Google Maps.
 
 ### 🌱 3. The "Eco-Loop" Gamification
-* **Carbon Calculator:** Real-time tracking of CO₂ emissions saved.
-* **Rewards:** "Green Points" are awarded per km saved, redeemable for campus perks (Canteen coupons, Priority parking).
+* **Carbon Calculator :** Real-time tracking of CO₂ emissions saved.
+* **Rewards :** "Green Points" are awarded per km saved, redeemable for campus perks (Canteen coupons, Priority parking).
 
 ### 🚨 4. Real-Time Safety
 * **SOS Integration:** One-tap emergency alert sharing live coordinates with campus security.
