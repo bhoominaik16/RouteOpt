@@ -48,7 +48,7 @@ const Navbar = () => {
           {user ? (
             <>
       
-              <Link to="/ride-selection" className="bg-emerald-100 text-emerald-700 px-5 py-2 rounded-full font-bold hover:bg-emerald-200 transition">
+              <Link to="/ride-selection" className="bg-slate-900 text-white px-5 py-2 rounded-full font-bold hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300">
                 Start a Ride
               </Link>
 
@@ -58,7 +58,7 @@ const Navbar = () => {
                   onClick={() => setShowDropdown(!showDropdown)}
                   className="flex items-center gap-2 p-1 hover:bg-slate-100 rounded-full transition outline-none"
                 >
-                  <div className="w-9 h-9 bg-emerald-600 rounded-full flex items-center justify-center text-white font-bold uppercase shadow-sm border-2 border-white ring-2 ring-emerald-50">
+                  <div className="w-9 h-9 bg-slate-900 rounded-full flex items-center justify-center text-white font-bold uppercase shadow-sm border-2 border-white ring-2 ring-emerald-50">
                     {user.name[0]}
                   </div>
                   <svg className={`w-4 h-4 text-slate-400 transition-transform ${showDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
