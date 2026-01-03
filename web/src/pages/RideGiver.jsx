@@ -3,9 +3,13 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-
 import L from 'leaflet';
 import toast from 'react-hot-toast';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom'; // 1. Import useNavigate
+import { useNavigate } from 'react-router-dom';
 
-// --- STYLING FIXES ---
+// 🔥 FIREBASE IMPORTS
+import { db } from '../firebase'; 
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+
+// --- STYLING FIXES (Leaflet Default Marker Bug) ---
 const redIcon = new L.Icon({
   iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
@@ -15,6 +19,7 @@ const redIcon = new L.Icon({
   shadowSize: [41, 41]
 });
 
+// Helper component to move map view
 function MapUpdater({ center }) {
   const map = useMap();
   useEffect(() => {
@@ -24,7 +29,13 @@ function MapUpdater({ center }) {
 }
 
 const RideGiver = () => {
-  const navigate = useNavigate(); // 2. Initialize navigate
+  const navigate = useNavigate();
+  
+  // 👤 Get User from Local Storage
+  const [user] = useState(() => {
+    return JSON.parse(localStorage.getItem('user')) || null;
+  });
+
   const [loading, setLoading] = useState(false);
   const [availableRoutes, setAvailableRoutes] = useState([]);
   const [mapCenter, setMapCenter] = useState([20.5937, 78.9629]); 
@@ -42,6 +53,7 @@ const RideGiver = () => {
     selectedRoute: null
   });
 
+  // 🌍 1. FETCH ROUTES (Using Photon API to fix CORS)
   const fetchRouteOptions = async () => {
     if (!formData.source || !formData.destination) {
       toast.error("Please enter both source and destination");
@@ -50,24 +62,31 @@ const RideGiver = () => {
 
     setLoading(true);
     try {
-      const srcRes = await axios.get(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(formData.source)}&limit=1`);
-      const destRes = await axios.get(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(formData.destination)}&limit=1`);
+      // Use Photon API (No CORS issues, free, fast)
+      const srcRes = await axios.get(`https://photon.komoot.io/api/?q=${encodeURIComponent(formData.source)}&limit=1`);
+      const destRes = await axios.get(`https://photon.komoot.io/api/?q=${encodeURIComponent(formData.destination)}&limit=1`);
 
-      if (srcRes.data.length === 0 || destRes.data.length === 0) {
+      if (!srcRes.data.features.length || !destRes.data.features.length) {
         throw new Error("Could not find locations. Try being more specific.");
       }
 
+      // Extract Data (Photon gives [Lon, Lat])
+      const srcFeature = srcRes.data.features[0];
+      const destFeature = destRes.data.features[0];
+
       setExactNames({
-        src: srcRes.data[0].display_name.split(',')[0],
-        dest: destRes.data[0].display_name.split(',')[0]
+        src: srcFeature.properties.name + ", " + (srcFeature.properties.city || srcFeature.properties.country || ""),
+        dest: destFeature.properties.name + ", " + (destFeature.properties.city || destFeature.properties.country || "")
       });
 
-      const start = [parseFloat(srcRes.data[0].lat), parseFloat(srcRes.data[0].lon)];
-      const end = [parseFloat(destRes.data[0].lat), parseFloat(destRes.data[0].lon)];
+      // Convert [Lon, Lat] -> [Lat, Lon] for Leaflet
+      const start = [srcFeature.geometry.coordinates[1], srcFeature.geometry.coordinates[0]]; 
+      const end = [destFeature.geometry.coordinates[1], destFeature.geometry.coordinates[0]]; 
       
       setCoords({ start, end });
       setMapCenter(start);
 
+      // Call OSRM (Requires Lon,Lat string format)
       const routeRes = await axios.get(
         `https://router.project-osrm.org/route/v1/driving/${start[1]},${start[0]};${end[1]},${end[0]}?alternatives=true&overview=full&geometries=geojson`
       );
@@ -77,6 +96,7 @@ const RideGiver = () => {
         name: r.legs[0].summary ? `via ${r.legs[0].summary}` : `Option ${index + 1}`,
         distance: (r.distance / 1000).toFixed(1),
         duration: Math.round(r.duration / 60),
+        // Flip geometry back to [Lat, Lon] for Leaflet Polyline
         geometry: r.geometry.coordinates.map(coord => [coord[1], coord[0]]) 
       }));
 
@@ -85,29 +105,78 @@ const RideGiver = () => {
       toast.success(`Found ${routes.length} possible routes!`);
 
     } catch (error) {
-      toast.error(error.message || "Error calculating routes");
+      console.error(error);
+      toast.error("Error finding location. Try specific city names.");
     } finally {
       setLoading(false);
     }
   };
 
-  const handlePostRide = (e) => {
+  // 🚀 2. SAVE TO FIREBASE (Fixes 'Nested Arrays' Error)
+  const handlePostRide = async (e) => {
     e.preventDefault();
+
+    if (!user) {
+        toast.error("Please log in to post a ride!");
+        navigate('/auth');
+        return;
+    }
+
     if (!formData.selectedRoute) {
       toast.error("Please select a route first");
       return;
     }
 
-    // Simulate posting the data to your backend logic core
-    console.log("Final Ride Data Posted:", formData);
-    
-    toast.success('Ride details posted successfully!');
+    setLoading(true);
 
-    // 3. Navigate to the dashboard
-    // We use a slight delay so the user can see the success toast
-    setTimeout(() => {
-      navigate('/ride-giver-dashboard');
-    }, 1500);
+    try {
+        // Convert [[lat, lng], ...] array to [{lat, lng}, ...] objects
+        // This fixes the Firebase "Nested arrays not supported" error
+        const serializedGeometry = formData.selectedRoute.geometry.map(point => ({
+            lat: point[0], 
+            lng: point[1]
+        }));
+
+        const rideData = {
+            driverId: user.uid,
+            driverName: user.name || "Unknown Driver",
+            driverEmail: user.email,
+            driverImage: user.profileImage || "",
+            
+            source: exactNames.src,
+            destination: exactNames.dest,
+            sourceCoords: coords.start,
+            destCoords: coords.end,
+            
+            // Save the serialized route object
+            routeGeometry: serializedGeometry, 
+            
+            distance: formData.selectedRoute.distance,
+            duration: formData.selectedRoute.duration,
+            
+            seatsAvailable: parseInt(formData.seats),
+            genderPreference: formData.genderPreference,
+            sameInstitution: formData.sameInstitution,
+            
+            departureTime: formData.timeMode === 'immediate' ? 'NOW' : formData.scheduledTime,
+            status: 'ACTIVE',
+            createdAt: serverTimestamp()
+        };
+
+        await addDoc(collection(db, "rides"), rideData);
+
+        toast.success('Ride posted successfully! Redirecting...');
+        
+        setTimeout(() => {
+            navigate('/ride-giver-dashboard');
+        }, 1500);
+
+    } catch (error) {
+        console.error("Error posting ride:", error);
+        toast.error(`Failed: ${error.message}`);
+    } finally {
+        setLoading(false);
+    }
   };
 
   return (
@@ -211,8 +280,12 @@ const RideGiver = () => {
               </button>
             </div>
 
-            <button type="submit" className="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl hover:bg-slate-800 transition shadow-xl">
-              Post Ride Details
+            <button 
+              type="submit" 
+              disabled={loading}
+              className={`w-full text-white font-bold py-4 rounded-2xl transition shadow-xl ${loading ? 'bg-slate-400 cursor-not-allowed' : 'bg-slate-900 hover:bg-slate-800'}`}
+            >
+              {loading ? "Processing..." : "Post Ride Details"}
             </button>
           </form>
         </div>

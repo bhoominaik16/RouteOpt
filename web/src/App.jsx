@@ -6,6 +6,7 @@ import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import Auth from "./pages/Auth";
 import Profile from "./pages/Profile";
+import RideHistory from "./pages/RideHistory";
 import RideSelection from "./pages/RideSelection";
 import RideGiver from "./pages/RideGiver";
 import RideTaker from "./pages/RideTaker";
@@ -37,7 +38,8 @@ function App() {
         <Route path="/ride-giver" element={<RideGiver />} />
         <Route path="/ride-taker" element={<RideTaker />} />
         <Route path="/ride-giver-dashboard" element={<RideGiverDashboard />} />
-        <Route path="/ride-details" element={<RideDetails />} />
+        <Route path="/ride-details/:id" element={<RideDetails />} />
+        <Route path="/history" element={<RideHistory />} />
         <Route path="/admin" element={<AdminDashboard />} />
       </Routes>
       {!isAdminPage && user && <SOSButton user={user} />}

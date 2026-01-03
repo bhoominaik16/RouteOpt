@@ -1,172 +1,296 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import toast from 'react-hot-toast';
 
-// Custom Markers
+// 🔥 FIREBASE IMPORTS
+import { db } from '../firebase';
+import { 
+    doc, getDoc, collection, addDoc, 
+    serverTimestamp, query, where, getDocs 
+} from 'firebase/firestore';
+
+// --- LEAFLET ICONS ---
 const redIcon = new L.Icon({
   iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-  iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
 });
 
-const greenIcon = new L.Icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
-  iconSize: [25, 41], iconAnchor: [12, 41]
-});
+// Helper to center map on route
+function MapUpdater({ bounds }) {
+  const map = useMap();
+  useEffect(() => {
+    if (bounds && bounds.length > 0) {
+      map.fitBounds(bounds, { padding: [50, 50] });
+    }
+  }, [bounds, map]);
+  return null;
+}
 
 const RideDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  
+  const [ride, setRide] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [requesting, setRequesting] = useState(false);
+  const [hasRequested, setHasRequested] = useState(false);
+  const [requestStatus, setRequestStatus] = useState(null); // 'PENDING', 'ACCEPTED', 'REJECTED'
 
-  const [rideData] = useState({
-    giver: {
-      name: "Aditi Sharma",
-      gender: "Female", // Gender data point
-      inst: "IIT Bombay (Staff)",
-      rating: 4.9,
-      bio: "Regular commuter from Andheri. Looking for quiet co-passengers."
-    },
-    route: {
-      source: "Andheri West",
-      destination: "IIT Bombay, Powai",
-      time: "10:30 AM",
-      distance: "12.4 km",
-      totalSeats: 4,
-      occupiedSeats: 2,
-      geometry: [[19.1136, 72.8697], [19.1291, 72.9095], [19.1334, 72.9133]]
-    },
-    passengers: [
-      { name: "Sneha Kapoor", gender: "Female", inst: "IIT Bombay (Student)", pickup: "JVLR Junction" },
-      { name: "Riya Sen", gender: "Female", inst: "IIT Bombay (Student)", pickup: "Powai Lake" }
-    ],
-    takerPoint: [19.1200, 72.8900] 
-  });
+  // Get Current User
+  const user = JSON.parse(localStorage.getItem('user'));
 
-  const handleRequestSeat = () => {
-    toast.success("Request sent to Aditi! You will be notified once accepted.");
-    setTimeout(() => navigate('/ride-taker'), 2000);
+  // 1. FETCH RIDE DETAILS
+  useEffect(() => {
+    const fetchRide = async () => {
+      try {
+        const docRef = doc(db, "rides", id);
+        const docSnap = await getDoc(docRef);
+        
+        if (docSnap.exists()) {
+          setRide({ id: docSnap.id, ...docSnap.data() });
+        } else {
+          toast.error("Ride not found");
+          navigate('/ride-taker');
+        }
+      } catch (error) {
+        console.error("Error fetching ride:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchRide();
+  }, [id, navigate]);
+
+  // 2. CHECK IF ALREADY REQUESTED
+  useEffect(() => {
+    const checkRequestStatus = async () => {
+        if (!user || !id) return;
+
+        try {
+            const q = query(
+                collection(db, "ride_requests"), 
+                where("rideId", "==", id),
+                where("takerId", "==", user.uid)
+            );
+            const snapshot = await getDocs(q);
+            
+            if (!snapshot.empty) {
+                setHasRequested(true);
+                // Get the status of the first request found
+                setRequestStatus(snapshot.docs[0].data().status);
+            }
+        } catch (error) {
+            console.error("Error checking request status:", error);
+        }
+    };
+    checkRequestStatus();
+  }, [user, id]);
+
+  // 3. HANDLE REQUEST SEAT
+  const handleRequestSeat = async () => {
+    if (!user) {
+      toast.error("Please login to request a ride");
+      navigate('/auth');
+      return;
+    }
+    
+    // Safety Checks
+    if (ride.seatsAvailable <= 0) {
+      toast.error("Ride is full!");
+      return;
+    }
+    if (ride.driverId === user.uid) {
+        toast.error("You cannot request your own ride!");
+        return;
+    }
+
+    setRequesting(true);
+    const toastId = toast.loading("Sending request to driver...");
+
+    try {
+      // Create Ticket
+      await addDoc(collection(db, "ride_requests"), {
+        rideId: id,
+        driverId: ride.driverId,
+        takerId: user.uid,
+        takerName: user.name || "Unknown",
+        takerImage: user.profileImage || "",
+        pickupLocation: ride.source, // Could be enhanced to allow custom pickup selection
+        status: "PENDING", 
+        timestamp: serverTimestamp()
+      });
+
+      toast.success("Request Sent! Waiting for approval.", { id: toastId });
+      setHasRequested(true);
+      setRequestStatus("PENDING");
+
+    } catch (error) {
+      console.error("Request failed:", error);
+      toast.error("Request failed. Try again.", { id: toastId });
+    } finally {
+      setRequesting(false);
+    }
+  };
+
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-center">
+            <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-slate-500 font-medium">Loading Route...</p>
+        </div>
+    </div>
+  );
+
+  if (!ride) return null;
+
+  // Reconstruct Polyline for Map
+  const polylinePositions = ride.routeGeometry?.map(p => [p.lat, p.lng]) || [];
+  const mapCenter = ride.sourceCoords || [20.5937, 78.9629];
+
+  // Helper to determine button style based on status
+  const getButtonText = () => {
+      if (ride.seatsAvailable === 0) return "Ride Full";
+      if (hasRequested) {
+          if (requestStatus === 'ACCEPTED') return "Ride Accepted! ✅";
+          if (requestStatus === 'REJECTED') return "Request Declined ❌";
+          return "Request Pending ⏳";
+      }
+      if (requesting) return "Sending...";
+      return "Request Seat";
   };
 
   return (
-    <div className="min-h-[90vh] flex flex-col bg-slate-50 overflow-hidden">
+    <div className="min-h-screen bg-slate-50 pb-20">
       
-      {/* GAP IMPLEMENTATION: 
-        Added 'gap-8' (or gap-10) to create a clear separation between the sections.
-        Added 'p-4' to ensure the sections don't touch the screen edges.
-      */}
-      <div className="flex-grow grid grid-cols-12 gap-8 p-4 overflow-hidden">
-        
-        {/* --- LEFT SECTION: Details (40%) --- */}
-        <aside className="col-span-12 lg:col-span-5 bg-white rounded-3xl shadow-sm border border-slate-100 flex flex-col overflow-y-auto custom-scrollbar">
-          
-          {/* Giver Profile Header */}
-          <div className="p-4 bg-gradient-to-b from-slate-50 to-white border-b border-slate-100">
-            <button onClick={() => navigate(-1)} className="text-slate-400 hover:text-slate-600 mb-6 flex items-center gap-2 text-sm font-bold">
-              ← Back to Results
+      {/* HEADER SECTION */}
+      <div className="bg-slate-900 text-white pt-10 pb-24 px-6">
+        <div className="max-w-4xl mx-auto">
+            <button onClick={() => navigate(-1)} className="text-slate-400 hover:text-white mb-4 flex items-center gap-2 transition-colors">
+                ← Back to Results
             </button>
-            
-            <div className="flex gap-6 items-center">
-              <div className="w-24 h-24 bg-emerald-100 rounded-3xl flex items-center justify-center text-4xl shadow-inner text-emerald-700">
-                {rideData.giver.gender === "Female" ? "👩" : "👨"}
-              </div>
-              <div>
-                <h1 className="text-3xl font-black text-slate-900 leading-tight">{rideData.giver.name}</h1>
-                {/* GENDER ADDED HERE */}
-                <div className="flex items-center gap-2 mt-1">
-                  <p className="text-emerald-600 font-bold">{rideData.giver.inst}</p>
-                  <span className="text-slate-300">•</span>
-                  <p className="text-slate-500 text-sm font-semibold uppercase tracking-wider">{rideData.giver.gender}</p>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold flex items-center gap-3">
+                        {ride.source} <span className="text-slate-500">to</span> {ride.destination}
+                    </h1>
+                    <p className="text-emerald-400 font-mono mt-2 flex items-center gap-2">
+                        ⏱ Leaving {ride.departureTime === 'NOW' ? 'NOW' : new Date(ride.departureTime).toLocaleString()}
+                    </p>
                 </div>
-                <div className="mt-2">
-                  <span className="text-sm font-medium text-slate-400 italic">" {rideData.giver.bio} "</span>
+                <div className="bg-slate-800 px-6 py-3 rounded-2xl border border-slate-700 text-center shadow-lg">
+                    <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Seats Left</p>
+                    <p className="text-3xl font-black text-white">{ride.seatsAvailable}</p>
                 </div>
-              </div>
             </div>
-          </div>
+        </div>
+      </div>
 
-          <div className="p-5 space-y-6">
-            {/* Ride Logistics */}
-            <div className="grid grid-cols-2 gap-6">
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Time & Distance</p>
-                <p className="text-lg font-black text-slate-800">{rideData.route.time} • {rideData.route.distance}</p>
-              </div>
-              <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100">
-                <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Available Seats</p>
-                <p className="text-lg font-black text-emerald-700">{rideData.route.totalSeats - rideData.route.occupiedSeats} Left</p>
-              </div>
-            </div>
+      {/* CONTENT GRID */}
+      <div className="max-w-4xl mx-auto px-6 -mt-16 relative z-10">
+        <div className="grid md:grid-cols-3 gap-6">
 
-            {/* Path Visualization (Text) */}
-            <div className="relative pl-6 border-l-2 border-dashed border-slate-200 space-y-6">
-              <div className="relative">
-                <div className="absolute -left-[31px] top-1 w-4 h-4 rounded-full bg-red-500 ring-4 ring-red-100" />
-                <p className="text-xs font-bold text-slate-400 uppercase">Start Point</p>
-                <p className="font-bold text-slate-700">{rideData.route.source}</p>
-              </div>
-              <div className="relative">
-                <div className="absolute -left-[31px] top-1 w-4 h-4 rounded-full bg-red-500 ring-4 ring-red-100" />
-                <p className="text-xs font-bold text-slate-400 uppercase">End Point</p>
-                <p className="font-bold text-slate-700">{rideData.route.destination}</p>
-              </div>
-            </div>
-
-            {/* TRUST LAYER: Co-Passenger Info */}
-            <div>
-              <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-4 flex items-center gap-2">
-                <span className="text-blue-500 text-lg">👥</span> Who's already on board?
-              </h3>
-              <div className="space-y-3">
-                {rideData.passengers.map((p, i) => (
-                  <div key={i} className="flex items-center justify-between p-4 rounded-2xl bg-blue-50/50 border border-blue-100">
-                    <div>
-                      <p className="font-bold text-slate-800 text-sm">{p.name}</p>
-                      <p className="text-[10px] text-blue-600 font-medium">{p.inst}</p>
+            {/* LEFT COLUMN: Driver Profile & Action */}
+            <div className="md:col-span-1 space-y-6">
+                
+                {/* Driver Card */}
+                <div className="bg-white p-6 rounded-3xl shadow-xl border border-slate-100">
+                    <div className="flex flex-col items-center text-center">
+                        <div className="w-24 h-24 bg-slate-100 rounded-full mb-4 overflow-hidden border-4 border-emerald-50 shadow-inner">
+                            {ride.driverImage ? (
+                                <img src={ride.driverImage} alt="Driver" className="w-full h-full object-cover" />
+                            ) : (
+                                <span className="text-4xl leading-[96px]">👤</span>
+                            )}
+                        </div>
+                        <h2 className="text-xl font-bold text-slate-900">{ride.driverName}</h2>
+                        
+                        <div className="flex flex-wrap justify-center gap-2 mt-2">
+                            {ride.sameInstitution && (
+                                <span className="bg-blue-50 text-blue-600 border border-blue-100 text-[10px] px-2 py-1 rounded-full font-bold uppercase tracking-wide">
+                                    Same Org
+                                </span>
+                            )}
+                            {ride.genderPreference && (
+                                <span className="bg-pink-50 text-pink-600 border border-pink-100 text-[10px] px-2 py-1 rounded-full font-bold uppercase tracking-wide">
+                                    Same Gender
+                                </span>
+                            )}
+                        </div>
+                        
+                        <div className="w-full h-px bg-slate-100 my-4" />
+                        
+                        <div className="grid grid-cols-2 w-full gap-4 text-center">
+                            <div>
+                                <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Distance</p>
+                                <p className="font-bold text-slate-700 text-lg">{ride.distance} km</p>
+                            </div>
+                            <div>
+                                <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Duration</p>
+                                <p className="font-bold text-slate-700 text-lg">{ride.duration} min</p>
+                            </div>
+                        </div>
                     </div>
-                    <span className="text-[10px] bg-white px-2 py-1 rounded-lg border border-blue-100 font-bold text-slate-500 uppercase">
-                      {p.gender}
-                    </span>
-                  </div>
-                ))}
-              </div>
+                </div>
+
+                {/* ACTION BUTTON */}
+                <button 
+                    onClick={handleRequestSeat}
+                    disabled={requesting || ride.seatsAvailable === 0 || hasRequested}
+                    className={`w-full py-4 rounded-2xl font-bold text-lg shadow-xl transition-all active:scale-95 border-2 ${
+                        hasRequested
+                            ? requestStatus === 'ACCEPTED' 
+                                ? 'bg-emerald-100 text-emerald-700 border-emerald-200 cursor-default'
+                                : requestStatus === 'REJECTED'
+                                    ? 'bg-red-50 text-red-500 border-red-100 cursor-default'
+                                    : 'bg-slate-100 text-slate-500 border-slate-200 cursor-default'
+                            : ride.seatsAvailable === 0 
+                                ? 'bg-slate-300 text-slate-500 border-transparent cursor-not-allowed' 
+                                : 'bg-emerald-600 text-white border-transparent hover:bg-emerald-700 hover:shadow-emerald-200'
+                    }`}
+                >
+                    {getButtonText()}
+                </button>
             </div>
 
-            <button 
-              onClick={handleRequestSeat}
-              className="w-full py-5 bg-slate-900 text-white rounded-3xl font-black text-xl shadow-2xl hover:bg-slate-800 active:scale-95 transition-all mt-4"
-            >
-              Request to Join Ride
-            </button>
-          </div>
-        </aside>
+            {/* RIGHT COLUMN: Map */}
+            <div className="md:col-span-2 h-[500px] bg-white rounded-3xl shadow-xl border-4 border-white overflow-hidden relative z-0">
+                <MapContainer center={mapCenter} zoom={13} style={{ height: '100%', width: '100%' }}>
+                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                    
+                    {/* Auto-zoom to fit the route */}
+                    <MapUpdater bounds={polylinePositions} />
 
-        {/* --- RIGHT SECTION: Map (60%) --- */}
-        <main className="col-span-12 lg:col-span-7 bg-slate-200 rounded-3xl overflow-hidden border border-slate-200 relative">
-          <MapContainer center={[19.1291, 72.9095]} zoom={13} style={{ height: '100%', width: '100%' }}>
-            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            
-            <Polyline positions={rideData.route.geometry} color="#EF4444" weight={6} opacity={0.8} />
-            
-            <Marker position={rideData.route.geometry[0]} icon={redIcon}>
-              <Popup>Giver Source</Popup>
-            </Marker>
-            <Marker position={rideData.route.geometry[rideData.route.geometry.length-1]} icon={redIcon}>
-              <Popup>Giver Destination</Popup>
-            </Marker>
+                    {ride.sourceCoords && (
+                        <Marker position={ride.sourceCoords} icon={redIcon}>
+                            <Popup>Pickup: {ride.source}</Popup>
+                        </Marker>
+                    )}
+                    {ride.destCoords && (
+                        <Marker position={ride.destCoords} icon={redIcon}>
+                            <Popup>Dropoff: {ride.destination}</Popup>
+                        </Marker>
+                    )}
+                    
+                    {/* Draw the Route Line */}
+                    {polylinePositions.length > 0 && (
+                        <Polyline positions={polylinePositions} color="#EF4444" weight={6} opacity={0.8} />
+                    )}
+                </MapContainer>
+                
+                {/* Overlay Badge */}
+                <div className="absolute top-4 right-4 bg-white/90 backdrop-blur px-4 py-2 rounded-xl shadow-lg z-[1000] border border-slate-100">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">Route View</p>
+                    <p className="text-sm font-black text-slate-800">Live Geometry</p>
+                </div>
+            </div>
 
-            <Marker position={rideData.takerPoint} icon={greenIcon}>
-              <Popup>Your Location</Popup>
-            </Marker>
-          </MapContainer>
-
-          {/* Floating Badge */}
-          <div className="absolute top-6 right-6 bg-white/95 backdrop-blur px-5 py-3 rounded-2xl shadow-2xl z-[1000] border border-slate-100">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pickup Feasibility</p>
-            <p className="text-lg font-black text-emerald-600">High Match Score</p>
-          </div>
-        </main>
-
+        </div>
       </div>
     </div>
   );
