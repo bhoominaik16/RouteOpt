@@ -7,6 +7,7 @@ const Footer = () => {
 
   useEffect(() => {
     const loggedInUser = JSON.parse(localStorage.getItem('user'));
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setUser(loggedInUser);
   }, [location]);
 
