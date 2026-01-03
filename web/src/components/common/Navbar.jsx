@@ -6,8 +6,7 @@ const Navbar = () => {
   const navigate = useNavigate();
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef(null);
-  
-  // Retrieve user from localStorage
+
   const user = JSON.parse(localStorage.getItem('user'));
 
   const handleLogout = () => {
@@ -17,7 +16,6 @@ const Navbar = () => {
     navigate('/auth');
   };
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -31,31 +29,36 @@ const Navbar = () => {
   return (
     <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-100 px-8 py-4">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
-        {/* Logo */}
-        <Link to="/" className="flex items-center gap-2">
-          <div className="bg-emerald-600 p-2 rounded-lg text-white">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-            </svg>
+      
+        <Link to="/" className="flex items-center gap-3 group">
+          <div className="bg-emerald-600/10 p-2 rounded-xl group-hover:bg-emerald-600/20 transition-colors">
+       
+            <img 
+              src="/Logo.png" 
+              alt="RouteOpt Logo" 
+              className="w-8 h-8 object-contain"
+            />
           </div>
-          <span className="text-2xl font-bold text-emerald-900">RouteOpt</span>
+          <span className="text-2xl font-bold text-emerald-900 tracking-tight">
+            RouteOpt
+          </span>
         </Link>
 
         <div className="flex items-center gap-6">
           {user ? (
             <>
-              {/* Take a Ride Button */}
+      
               <Link to="/ride-selection" className="bg-emerald-100 text-emerald-700 px-5 py-2 rounded-full font-bold hover:bg-emerald-200 transition">
                 Start a Ride
               </Link>
 
-              {/* Profile Dropdown Container */}
+       
               <div className="relative" ref={dropdownRef}>
                 <button 
                   onClick={() => setShowDropdown(!showDropdown)}
                   className="flex items-center gap-2 p-1 hover:bg-slate-100 rounded-full transition outline-none"
                 >
-                  <div className="w-9 h-9 bg-emerald-600 rounded-full flex items-center justify-center text-white font-bold uppercase shadow-sm">
+                  <div className="w-9 h-9 bg-emerald-600 rounded-full flex items-center justify-center text-white font-bold uppercase shadow-sm border-2 border-white ring-2 ring-emerald-50">
                     {user.name[0]}
                   </div>
                   <svg className={`w-4 h-4 text-slate-400 transition-transform ${showDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -63,29 +66,33 @@ const Navbar = () => {
                   </svg>
                 </button>
 
-                {/* Dropdown Menu */}
+          
                 {showDropdown && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white border border-slate-100 rounded-2xl shadow-xl py-2 animate-in fade-in zoom-in duration-150">
-                    <div className="px-4 py-2 border-b border-slate-50 mb-1">
-                      <p className="text-xs text-slate-400 font-medium">Signed in as</p>
+                  <div className="absolute right-0 mt-2 w-56 bg-white border border-slate-100 rounded-2xl shadow-xl py-2 animate-in fade-in zoom-in-95 duration-200 origin-top-right">
+                    <div className="px-4 py-3 border-b border-slate-50 mb-1">
+                      <p className="text-xs text-slate-400 font-medium uppercase tracking-wider mb-1">Signed in as</p>
                       <p className="text-sm font-bold text-slate-800 truncate">{user.name}</p>
+                      <p className="text-xs text-slate-500 truncate">{user.email}</p>
                     </div>
                     <ul>
                       <li>
-                        <Link to="/profile" className="block px-4 py-2 text-sm text-slate-600 hover:bg-emerald-50 hover:text-emerald-600 transition">
+                        <Link to="/profile" className="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 transition">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
                           My Profile
                         </Link>
                       </li>
                       <li>
-                        <Link to="/history" className="block px-4 py-2 text-sm text-slate-600 hover:bg-emerald-50 hover:text-emerald-600 transition">
+                        <Link to="/history" className="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 transition">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                           Ride History
                         </Link>
                       </li>
                       <li className="border-t border-slate-50 mt-1">
                         <button 
                           onClick={handleLogout}
-                          className="w-full text-left px-4 py-2 text-sm text-red-500 font-semibold hover:bg-red-50 transition"
+                          className="w-full text-left flex items-center gap-2 px-4 py-2.5 text-sm text-red-500 font-semibold hover:bg-red-50 transition"
                         >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
                           Logout
                         </button>
                       </li>
@@ -95,7 +102,7 @@ const Navbar = () => {
               </div>
             </>
           ) : (
-            <Link to="/auth" className="bg-emerald-600 text-white px-6 py-2.5 rounded-full font-semibold shadow-lg shadow-emerald-200">
+            <Link to="/auth" className="bg-slate-900 text-white px-6 py-2.5 rounded-full font-semibold shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300">
               Get Started
             </Link>
           )}
