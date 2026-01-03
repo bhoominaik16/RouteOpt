@@ -2,9 +2,9 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 
-// 🔥 Firebase
+// 🔥 Firebase Imports
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore"; // Added getDoc
 import { auth, db } from "../firebase";
 
 const Auth = () => {
@@ -29,42 +29,80 @@ const Auth = () => {
     const { name, email, gender, password, confirmPassword } = formData;
 
     try {
-      // 🔐 LOGIN
+      // ===========================
+      // 🔐 LOGIN LOGIC
+      // ===========================
       if (isLogin) {
-        await signInWithEmailAndPassword(auth, email, password);
-        toast.success("Logged in successfully");
-        navigate("/ride-selection");
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
+
+        // Fetch user data (including organization) from Firestore
+        const userDocRef = doc(db, "users", user.uid);
+        const userDocSnap = await getDoc(userDocRef);
+
+        if (userDocSnap.exists()) {
+          const userData = userDocSnap.data();
+          
+          // Save to LocalStorage so Profile & Ride Filters work immediately
+          localStorage.setItem("user", JSON.stringify(userData));
+          
+          toast.success("Logged in successfully");
+          navigate("/ride-selection");
+        } else {
+          toast.error("User data not found in database.");
+        }
       }
 
-      // 📝 SIGNUP
+      // ===========================
+      // 📝 SIGNUP LOGIC
+      // ===========================
       else {
         if (password !== confirmPassword) {
           toast.error("Passwords do not match");
           return;
         }
 
+        // 1. Create Auth User
         const userCredential = await createUserWithEmailAndPassword(
           auth,
           email,
           password
         );
-
         const user = userCredential.user;
 
-        // 🔥 Save user profile (institution logic comes later)
-        await setDoc(doc(db, "users", user.uid), {
+        // 2. Extract Organization from Email
+        // Example: "john@ves.ac.in" -> "ves.ac.in"
+        const emailDomain = email.split("@")[1];
+
+        const newUserProfile = {
           uid: user.uid,
           name,
           email,
           gender,
+          organization: emailDomain, // 👈 Storing the extracted domain
           createdAt: serverTimestamp(),
-        });
+        };
+
+        // 3. Save to Firestore
+        await setDoc(doc(db, "users", user.uid), newUserProfile);
+
+        // 4. Save to LocalStorage (for immediate app usage)
+        // We convert timestamp to null or string for localStorage to avoid JSON errors
+        localStorage.setItem("user", JSON.stringify({ ...newUserProfile, createdAt: new Date().toISOString() }));
 
         toast.success("Account created successfully");
         navigate("/ride-selection");
       }
     } catch (err) {
-      toast.error(err.message);
+      console.error(err);
+      // specific error handling for common firebase errors
+      if (err.code === 'auth/email-already-in-use') {
+        toast.error("Email is already registered. Please login.");
+      } else if (err.code === 'auth/invalid-email') {
+        toast.error("Invalid email address.");
+      } else {
+        toast.error(err.message);
+      }
     }
   };
 
