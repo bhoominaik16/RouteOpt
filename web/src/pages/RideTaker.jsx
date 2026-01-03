@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import Navbar from '../components/common/Navbar';
+import Navbar from '../components/Navbar';
 import toast from 'react-hot-toast';
 
 const RideTaker = () => {

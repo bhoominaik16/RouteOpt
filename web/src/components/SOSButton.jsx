@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { db } from '../../firebase'; // Check your path to firebase.js
+import { db } from '../firebase'; // Check your path to firebase.js
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import toast from 'react-hot-toast';
 
