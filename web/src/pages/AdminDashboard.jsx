@@ -113,7 +113,7 @@ const AdminDashboard = () => {
         <header className="mb-10 flex justify-between items-end">
           <div>
             <h1 className="text-2xl font-black uppercase tracking-tighter italic">
-              Campus Command Center
+              Admin Dashboard
             </h1>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
               Real-time Security & Impact Monitor
