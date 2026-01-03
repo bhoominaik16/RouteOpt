@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { auth, db } from '../firebase'; // Import your firebase config
+import { auth, db } from '../firebase'; 
 import { doc, getDoc } from 'firebase/firestore';
 import toast from 'react-hot-toast';
 
@@ -9,48 +9,57 @@ const Navbar = () => {
   const navigate = useNavigate();
   const [showDropdown, setShowDropdown] = useState(false);
   const [user, setUser] = useState(null);
-  const [userData, setUserData] = useState(null);
+  
+  // We need a local state for the image/name because Profile saves to localStorage
+  const [localData, setLocalData] = useState(JSON.parse(localStorage.getItem('user')));
+  
   const dropdownRef = useRef(null);
 
+  // 1. Listen for Firebase Auth (Login Status)
   useEffect(() => {
-    // 🔐 Real-time Firebase Auth Listener
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
-      
-      if (currentUser) {
-        // Fetch additional data (like name) from Firestore since Firebase Auth 
-        // sometimes takes a second to update the profile display name
-        const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-        if (userDoc.exists()) {
-          setUserData(userDoc.data());
-        }
-      } else {
-        setUserData(null);
-      }
     });
-
-    // Cleanup listener on unmount
     return () => unsubscribe();
+  }, []);
+
+  // 2. Listen for Profile Updates (The Sync Fix)
+  useEffect(() => {
+    const syncLocalData = () => {
+      const savedUser = JSON.parse(localStorage.getItem('user'));
+      if (savedUser) {
+        setLocalData(savedUser);
+      }
+    };
+
+    // Listen for the custom event we added in Profile.js
+    window.addEventListener('userUpdated', syncLocalData);
+    // Also listen for storage events (multi-tab support)
+    window.addEventListener('storage', syncLocalData);
+
+    return () => {
+      window.removeEventListener('userUpdated', syncLocalData);
+      window.removeEventListener('storage', syncLocalData);
+    };
   }, []);
 
   const handleLogout = async () => {
     try {
       await signOut(auth);
-
       localStorage.removeItem('user'); 
-
-      window.dispatchEvent(new Event("storage"));
-
+      setLocalData(null); // Clear local state immediately
+      window.dispatchEvent(new Event("userUpdated")); // Tell components to clear
+      
       toast.success('Logged out successfully');
       setShowDropdown(false);
       navigate('/auth');
-      
     } catch (error) {
       console.error(error);
       toast.error("Error logging out");
     }
   };
 
+  // Close dropdown on outside click
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -90,10 +99,21 @@ const Navbar = () => {
                   onClick={() => setShowDropdown(!showDropdown)}
                   className="flex items-center gap-2 p-1 hover:bg-slate-100 rounded-full transition outline-none"
                 >
-                  <div className="w-9 h-9 bg-slate-900 rounded-full flex items-center justify-center text-white font-bold uppercase shadow-sm border-2 border-white ring-2 ring-emerald-50">
-                    {/* Display first letter of name from Firestore or Email as fallback */}
-                    {userData?.name ? userData.name[0] : user.email[0]}
+                  {/* 👇 UPDATED: Check for Image, fallback to Initials */}
+                  <div className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold uppercase shadow-sm border-2 border-white ring-2 ring-emerald-50 overflow-hidden bg-slate-900">
+                    {localData?.profileImage ? (
+                       <img 
+                         src={localData.profileImage} 
+                         alt="User" 
+                         className="w-full h-full object-cover" 
+                       />
+                    ) : (
+                       <span>
+                         {localData?.name ? localData.name[0] : user.email[0]}
+                       </span>
+                    )}
                   </div>
+                  
                   <svg className={`w-4 h-4 text-slate-400 transition-transform ${showDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
                   </svg>
@@ -104,7 +124,7 @@ const Navbar = () => {
                     <div className="px-4 py-3 border-b border-slate-50 mb-1">
                       <p className="text-xs text-slate-400 font-medium uppercase tracking-wider mb-1">Signed in as</p>
                       <p className="text-sm font-bold text-slate-800 truncate">
-                        {userData?.name || "User"}
+                        {localData?.name || "User"}
                       </p>
                       <p className="text-xs text-slate-500 truncate">{user.email}</p>
                     </div>
