@@ -52,7 +52,7 @@ const Navbar = () => {
       
       toast.success('Logged out successfully');
       setShowDropdown(false);
-      navigate('/auth');
+      navigate('/');
     } catch (error) {
       console.error(error);
       toast.error("Error logging out");
