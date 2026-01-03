@@ -1,4 +1,5 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route , useLocation} from "react-router-dom";
+import { useState, useEffect } from 'react';
 import { Toaster } from 'react-hot-toast';
 import Landing from "./pages/Landing";
 import Navbar from "./components/Navbar";
@@ -9,10 +10,17 @@ import RideSelection from "./pages/RideSelection";
 import RideGiver from "./pages/RideGiver";
 import RideTaker from "./pages/RideTaker";
 import RideGiverDashboard from "./pages/RideGiverDashboard";
-
+import SOSButton from './components/SOSButton';
 
 function App() {
+  const [user, setUser] = useState(JSON.parse(localStorage.getItem('user')));
 
+  const location = useLocation();
+
+  useEffect(() => {
+    const loggedInUser = JSON.parse(localStorage.getItem('user'));
+    setUser(loggedInUser);
+  }, [location]);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -27,6 +35,7 @@ function App() {
         <Route path="/ride-taker" element={<RideTaker />} />
         <Route path="/ride-giver-dashboard" element={<RideGiverDashboard />} />
       </Routes>
+      {user && <SOSButton user={user} />}
       <Footer/>
     </div>
   )
