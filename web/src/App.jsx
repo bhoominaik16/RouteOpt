@@ -8,6 +8,7 @@ import Profile from "./pages/Profile";
 import RideSelection from "./pages/RideSelection";
 import RideGiver from "./pages/RideGiver";
 import RideTaker from "./pages/RideTaker";
+import RideGiverDashboard from "./pages/RideGiverDashboard";
 
 
 function App() {
@@ -23,6 +24,7 @@ function App() {
         <Route path="/ride-selection" element={<RideSelection />} />
         <Route path="/ride-giver" element={<RideGiver />} />
         <Route path="/ride-taker" element={<RideTaker />} />
+        <Route path="/ride-giver-dashboard" element={<RideGiverDashboard />} />
       </Routes>
       <Footer/>
     </div>

@@ -4,9 +4,9 @@ import L from 'leaflet';
 import Navbar from '../components/common/Navbar';
 import toast from 'react-hot-toast';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom'; // 1. Import useNavigate
 
 // --- STYLING FIXES ---
-// Custom RED icon for the markers to replace the default blue
 const redIcon = new L.Icon({
   iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
@@ -16,7 +16,6 @@ const redIcon = new L.Icon({
   shadowSize: [41, 41]
 });
 
-// Component to handle map center updates
 function MapUpdater({ center }) {
   const map = useMap();
   useEffect(() => {
@@ -26,9 +25,10 @@ function MapUpdater({ center }) {
 }
 
 const RideGiver = () => {
+  const navigate = useNavigate(); // 2. Initialize navigate
   const [loading, setLoading] = useState(false);
   const [availableRoutes, setAvailableRoutes] = useState([]);
-  const [mapCenter, setMapCenter] = useState([20.5937, 78.9629]); // Default to center of India
+  const [mapCenter, setMapCenter] = useState([20.5937, 78.9629]); 
   const [coords, setCoords] = useState({ start: null, end: null });
   const [exactNames, setExactNames] = useState({ src: '', dest: '' });
   
@@ -39,6 +39,7 @@ const RideGiver = () => {
     scheduledTime: '',
     seats: 1,
     genderPreference: false,
+    sameInstitution: false,
     selectedRoute: null
   });
 
@@ -50,7 +51,6 @@ const RideGiver = () => {
 
     setLoading(true);
     try {
-      // 1. Geocode both locations
       const srcRes = await axios.get(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(formData.source)}&limit=1`);
       const destRes = await axios.get(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(formData.destination)}&limit=1`);
 
@@ -58,7 +58,6 @@ const RideGiver = () => {
         throw new Error("Could not find locations. Try being more specific.");
       }
 
-      // 2. Extract specific location names for the UI
       setExactNames({
         src: srcRes.data[0].display_name.split(',')[0],
         dest: destRes.data[0].display_name.split(',')[0]
@@ -70,18 +69,16 @@ const RideGiver = () => {
       setCoords({ start, end });
       setMapCenter(start);
 
-      // 3. Fetch Driving Routes with alternatives
       const routeRes = await axios.get(
         `https://router.project-osrm.org/route/v1/driving/${start[1]},${start[0]};${end[1]},${end[0]}?alternatives=true&overview=full&geometries=geojson`
       );
 
       const routes = routeRes.data.routes.map((r, index) => ({
         id: index,
-        // Using OSRM summary to provide exact road/neighborhood names
         name: r.legs[0].summary ? `via ${r.legs[0].summary}` : `Option ${index + 1}`,
         distance: (r.distance / 1000).toFixed(1),
         duration: Math.round(r.duration / 60),
-        geometry: r.geometry.coordinates.map(coord => [coord[1], coord[0]]) // OSRM is [lon, lat]
+        geometry: r.geometry.coordinates.map(coord => [coord[1], coord[0]]) 
       }));
 
       setAvailableRoutes(routes);
@@ -101,8 +98,17 @@ const RideGiver = () => {
       toast.error("Please select a route first");
       return;
     }
+
+    // Simulate posting the data to your backend logic core
+    console.log("Final Ride Data Posted:", formData);
+    
     toast.success('Ride details posted successfully!');
-    console.log("Final Ride Data:", formData);
+
+    // 3. Navigate to the dashboard
+    // We use a slight delay so the user can see the success toast
+    setTimeout(() => {
+      navigate('/ride-giver-dashboard');
+    }, 1500);
   };
 
   return (
@@ -183,12 +189,27 @@ const RideGiver = () => {
                   {[1, 2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{n}</option>)}
                 </select>
               </div>
-              <div className="flex items-center justify-between p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
+              
+              <div className="flex items-center justify-between p-4 bg-emerald-50 rounded-2xl border border-emerald-100 h-[52px] mt-7">
                 <span className="font-bold text-emerald-900 text-sm">Same-Gender Only</span>
                 <button type="button" onClick={() => setFormData({...formData, genderPreference: !formData.genderPreference})} className={`w-10 h-5 rounded-full relative transition-colors ${formData.genderPreference ? 'bg-emerald-600' : 'bg-slate-300'}`}>
-                  <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${formData.genderPreference ? 'left-5' : 'left-1'}`} />
+                  <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${formData.genderPreference ? 'left-5' : 'left-1'}`} />
                 </button>
               </div>
+            </div>
+
+            <div className="flex items-center justify-between p-4 bg-blue-50 rounded-2xl border border-blue-100">
+              <div>
+                <span className="font-bold text-blue-900 text-md block">Same Institution Only</span>
+                <p className="text-sm text-blue-700">Limit visibility to your verified college/office</p>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setFormData({...formData, sameInstitution: !formData.sameInstitution})} 
+                className={`w-10 h-5 rounded-full relative transition-colors ${formData.sameInstitution ? 'bg-blue-600' : 'bg-slate-300'}`}
+              >
+                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${formData.sameInstitution ? 'left-5' : 'left-1'}`} />
+              </button>
             </div>
 
             <button type="submit" className="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl hover:bg-slate-800 transition shadow-xl">
@@ -197,13 +218,12 @@ const RideGiver = () => {
           </form>
         </div>
 
-        {/* RIGHT: Map Section (Styled with Red Polyline/Markers) */}
-        <div className="h-[400px] lg:h-full min-h-[500px] bg-slate-200 rounded-3xl overflow-hidden border-4 border-white shadow-2xl relative">
+        {/* RIGHT: Map Section */}
+        <div className="h-[400px] lg:h-full min-h-[550px] bg-slate-200 rounded-3xl overflow-hidden border-4 border-white shadow-2xl relative">
           <MapContainer center={mapCenter} zoom={13} style={{ height: '100%', width: '100%' }}>
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
             <MapUpdater center={mapCenter} />
             
-            {/* Red Markers with exact location names */}
             {coords.start && (
               <Marker position={coords.start} icon={redIcon}>
                 <Popup>Pickup: {exactNames.src}</Popup>
@@ -216,7 +236,6 @@ const RideGiver = () => {
               </Marker>
             )}
 
-            {/* Red Polyline that updates on dropdown selection */}
             {formData.selectedRoute && (
               <Polyline 
                 positions={formData.selectedRoute.geometry} 
@@ -227,7 +246,6 @@ const RideGiver = () => {
             )}
           </MapContainer>
           
-          {/* Overlay for Stats */}
           {formData.selectedRoute && (
             <div className="absolute top-4 right-4 bg-white/95 backdrop-blur px-4 py-2 rounded-xl shadow-lg z-[1000] border border-red-100">
               <p className="text-xs font-bold text-slate-500 uppercase">Efficiency Score</p>
