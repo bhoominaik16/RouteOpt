@@ -1,6 +1,4 @@
 import React, { useState } from 'react';
-import Navbar from '../components/common/Navbar';
-import Footer from '../components/common/Footer';
 
 const Profile = () => {
   // Retrieve user from localStorage

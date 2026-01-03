@@ -46,7 +46,7 @@ const Navbar = () => {
             <>
               {/* Take a Ride Button */}
               <Link to="/ride-selection" className="bg-emerald-100 text-emerald-700 px-5 py-2 rounded-full font-bold hover:bg-emerald-200 transition">
-                Take a Ride
+                Start a Ride
               </Link>
 
               {/* Profile Dropdown Container */}
