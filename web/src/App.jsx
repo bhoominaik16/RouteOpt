@@ -2,13 +2,14 @@ import { Routes, Route } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 
 import Landing from "./pages/Landing";
-import Navbar from "./components/Navbar";
-import Footer from "./components/Footer";
 import Auth from "./pages/Auth";
 import Profile from "./pages/Profile";
 import RideSelection from "./pages/RideSelection";
 import RideGiver from "./pages/RideGiver";
 import RideTaker from "./pages/RideTaker";
+
+import Navbar from "./components/Navbar";
+import Footer from "./components/Footer";
 
 // 🔥 Firebase Protected Route
 import ProtectedRoute from "./components/ProtectedRoute";

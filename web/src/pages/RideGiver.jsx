@@ -39,7 +39,6 @@ function MapUpdater({ center }) {
 
 const RideGiver = () => {
   const [user, setUser] = useState(null);
-
   const [loading, setLoading] = useState(false);
   const [availableRoutes, setAvailableRoutes] = useState([]);
   const [mapCenter, setMapCenter] = useState([20.5937, 78.9629]);
@@ -53,10 +52,11 @@ const RideGiver = () => {
     scheduledTime: "",
     seats: 1,
     genderPreference: false,
+    sameInstitution: false,
     selectedRoute: null,
   });
 
-  // 🔐 Get logged-in user
+  // 🔐 Auth guard
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (currentUser) => {
       if (!currentUser) {
@@ -114,7 +114,9 @@ const RideGiver = () => {
 
       const routes = routeRes.data.routes.map((r, index) => ({
         id: index,
-        name: r.legs[0].summary || `Option ${index + 1}`,
+        name: r.legs[0].summary
+          ? `via ${r.legs[0].summary}`
+          : `Option ${index + 1}`,
         distance: (r.distance / 1000).toFixed(1),
         duration: Math.round(r.duration / 60),
         geometry: r.geometry.coordinates.map((c) => [c[1], c[0]]),
@@ -153,6 +155,7 @@ const RideGiver = () => {
         route: formData.selectedRoute,
         seats: formData.seats,
         genderPreference: formData.genderPreference,
+        sameInstitution: formData.sameInstitution,
         departure:
           formData.timeMode === "immediate" ? "now" : formData.scheduledTime,
         createdAt: serverTimestamp(),
@@ -197,9 +200,32 @@ const RideGiver = () => {
               {loading ? "Calculating..." : "Find Routes"}
             </button>
 
+            {availableRoutes.length > 0 && (
+              <div>
+                <label className="block text-sm font-bold mb-2">
+                  Select Best Route
+                </label>
+                <select
+                  className="w-full px-4 py-3 rounded-xl border"
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      selectedRoute: availableRoutes[e.target.value],
+                    })
+                  }
+                >
+                  {availableRoutes.map((route, idx) => (
+                    <option key={idx} value={idx}>
+                      {route.name} ({route.distance} km, {route.duration} mins)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <button
               type="submit"
-              className="w-full py-4 bg-slate-900 text-white font-bold rounded-2xl"
+              className="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl"
             >
               Post Ride Details
             </button>
@@ -207,7 +233,7 @@ const RideGiver = () => {
         </div>
 
         {/* MAP */}
-        <div className="h-[500px] rounded-3xl overflow-hidden border">
+        <div className="h-[500px] rounded-3xl overflow-hidden border relative">
           <MapContainer center={mapCenter} zoom={13} style={{ height: "100%" }}>
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
             <MapUpdater center={mapCenter} />
@@ -222,6 +248,7 @@ const RideGiver = () => {
                 <Popup>{exactNames.dest}</Popup>
               </Marker>
             )}
+
             {formData.selectedRoute && (
               <Polyline
                 positions={formData.selectedRoute.geometry}
@@ -230,6 +257,13 @@ const RideGiver = () => {
               />
             )}
           </MapContainer>
+
+          {formData.selectedRoute && (
+            <div className="absolute top-4 right-4 bg-white px-4 py-2 rounded-xl shadow-lg">
+              <p className="text-xs font-bold uppercase">Efficiency</p>
+              <p className="text-xl font-black text-red-600">92%</p>
+            </div>
+          )}
         </div>
       </div>
     </div>
