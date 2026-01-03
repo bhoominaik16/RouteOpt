@@ -24,8 +24,8 @@ Traffic congestion and unsafe public commuting are major issues for students and
 * **Rewards :** "Green Points" are awarded per km saved, redeemable for campus perks (Canteen coupons, Priority parking).
 
 ### 🚨 4. Real-Time Safety
-* **SOS Integration:** One-tap emergency alert sharing live coordinates with campus security.
-* **Live Tracking:** WebSocket-based real-time driver tracking with <200ms latency.
+* **SOS Integration :** One-tap emergency alert sharing live coordinates with campus security.
+* **Live Tracking :** WebSocket-based real-time driver tracking with <200ms latency.
 
 ---
 
