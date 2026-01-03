@@ -10,14 +10,16 @@ import Profile from "./pages/Profile";
 function App() {
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen flex flex-col">
       <Toaster position="top-center" reverseOrder={false} />
       <Navbar/>
-      <Routes>
-        <Route path="/" element={<Landing />} />
-        <Route path="/auth" element={<Auth />} />
-        <Route path="/profile" element={<Profile />} />
-      </Routes>
+      <main className="flex-grow">
+        <Routes>
+          <Route path="/" element={<Landing />} />
+          <Route path="/auth" element={<Auth />} />
+          <Route path="/profile" element={<Profile />} />
+        </Routes>
+      </main>
       <Footer/>
     </div>
   )
