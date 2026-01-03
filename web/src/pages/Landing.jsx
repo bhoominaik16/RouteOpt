@@ -1,8 +1,20 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "../firebase"; // Import your firebase config
 import dashboardPreview from "../assets/LandingImage.png";
 
 const Landing = () => {
+  const [user, setUser] = useState(null);
+
+  // 🔐 Firebase Real-time Auth Listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+    return () => unsubscribe();
+  }, []);
+
   const stats = [
     {
       label: "CO₂ Saved",
@@ -55,11 +67,12 @@ const Landing = () => {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4">
+            {/* 🎯 Reactive Button Logic */}
             <Link
-              to="/auth"
-              className="px-8 py-4 bg-slate-900 text-white rounded-2xl font-bold text-lg shadow-xl hover:bg-slate-800 transition"
+              to={user ? "/ride-selection" : "/auth"}
+              className="px-8 py-4 bg-slate-900 text-white rounded-2xl font-bold text-lg shadow-xl hover:bg-slate-800 transition text-center"
             >
-              Get Started
+              {user ? "Find Ride" : "Get Started"}
             </Link>
 
             <button className="px-8 py-4 rounded-2xl font-bold text-slate-700 bg-white border shadow-sm hover:bg-slate-50 transition">
@@ -85,7 +98,7 @@ const Landing = () => {
         </div>
       </header>
 
-      {/* FEATURES */}
+      {/* FEATURES Section stays the same */}
       <section className="py-24 px-6 max-w-7xl mx-auto">
         <div className="text-center mb-16">
           <h2 className="text-3xl md:text-5xl font-bold mb-4">
@@ -128,7 +141,7 @@ const Landing = () => {
         </div>
       </section>
 
-      {/* STATS */}
+      {/* STATS Section stays the same */}
       <section className="py-20 px-6 max-w-7xl mx-auto">
         <div className="grid md:grid-cols-3 gap-6">
           {stats.map((stat, i) => (

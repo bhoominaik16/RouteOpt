@@ -32,7 +32,7 @@ const Auth = () => {
       if (isLogin) {
         await signInWithEmailAndPassword(auth, email, password);
         toast.success("Logged in successfully");
-        navigate("/ride-selection");
+        navigate("/");
       } 
       // 📝 SIGNUP LOGIC
       else {
@@ -59,7 +59,7 @@ const Auth = () => {
         });
 
         toast.success("Account created successfully");
-        navigate("/ride-selection");
+        navigate("/");
       }
     } catch (err) {
       toast.error(err.message);

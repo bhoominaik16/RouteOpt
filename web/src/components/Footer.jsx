@@ -1,25 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link } from 'react-router-dom';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from '../firebase'; // Ensure this points to your firebase config file
 
 const Footer = () => {
   const [user, setUser] = useState(null);
-  const location = useLocation();
 
   useEffect(() => {
-    const loggedInUser = JSON.parse(localStorage.getItem('user'));
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setUser(loggedInUser);
-  }, [location]);
+    // 🔐 Firebase Real-time Auth Listener
+    // This automatically detects logins/logouts across the entire app
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+
+    // Cleanup the listener when the component is destroyed
+    return () => unsubscribe();
+  }, []);
 
   return (
     <footer className="mt-auto bg-slate-900 text-slate-300 py-16 px-6 border-t border-slate-800 relative overflow-hidden">
       
+      {/* Decorative Gradients */}
       <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-emerald-500 to-transparent opacity-50"></div>
       <div className="absolute -top-24 -left-24 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
       <div className="absolute -bottom-24 -right-24 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
       <div className="max-w-7xl mx-auto relative z-10">
       
+        {/* CTA Section: Only shown to Logged-out users */}
         {!user && (
           <div className="mb-16 text-center border-b border-slate-800 pb-12">
              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">
@@ -41,30 +49,30 @@ const Footer = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-12 mb-12 text-sm">
          
-           <div className="col-span-1 md:col-span-1">
-             <div className="flex items-center gap-2 mb-4 text-white font-bold text-xl">
-               <div className="w-8 h-8 bg-gradient-to-br from-emerald-400 to-teal-600 rounded-lg flex items-center justify-center text-white text-sm shadow-inner">
-                 R
-               </div>
-               RouteOpt
-             </div>
-             <p className="text-slate-500 leading-relaxed">
-               The first secure, verified carpooling platform designed exclusively for educational and corporate campuses.
-             </p>
-           </div>
+            <div className="col-span-1 md:col-span-1">
+              <div className="flex items-center gap-2 mb-4 text-white font-bold text-xl">
+                <div className="w-8 h-8 bg-gradient-to-br from-emerald-400 to-teal-600 rounded-lg flex items-center justify-center text-white text-sm shadow-inner">
+                  R
+                </div>
+                RouteOpt
+              </div>
+              <p className="text-slate-500 leading-relaxed">
+                The first secure, verified carpooling platform designed exclusively for educational and corporate campuses.
+              </p>
+            </div>
 
-           <div>
-             <h4 className="text-white font-bold mb-4 uppercase tracking-wider text-xs">Platform</h4>
-             <ul className="space-y-3">
-               <li><Link to="/" onClick={() => window.scrollTo(0, 0)} className="hover:text-emerald-400 transition-colors">Home</Link></li>
-               <li><Link to="/auth" onClick={() => window.scrollTo(0, 0)} className="hover:text-emerald-400 transition-colors">Find a Ride</Link></li>
-               <li><a href="#impact" className="hover:text-emerald-400 transition-colors">Impact Stats</a></li>
-             </ul>
-           </div>
+            <div>
+              <h4 className="text-white font-bold mb-4 uppercase tracking-wider text-xs">Platform</h4>
+              <ul className="space-y-3">
+                <li><Link to="/" onClick={() => window.scrollTo(0, 0)} className="hover:text-emerald-400 transition-colors">Home</Link></li>
+                <li><Link to="/auth" onClick={() => window.scrollTo(0, 0)} className="hover:text-emerald-400 transition-colors">Find a Ride</Link></li>
+                <li><a href="#impact" className="hover:text-emerald-400 transition-colors">Impact Stats</a></li>
+              </ul>
+            </div>
 
-           <div>
-             <h4 className="text-white font-bold mb-4 uppercase tracking-wider text-xs">Stay Connected</h4>
-             <div className="flex gap-4 mb-6">
+            <div>
+              <h4 className="text-white font-bold mb-4 uppercase tracking-wider text-xs">Stay Connected</h4>
+              <div className="flex gap-4 mb-6">
                 
                 <a href="https://instagram.com" target="_blank" rel="noreferrer" className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center hover:bg-pink-600 hover:text-white transition-all group">
                   <svg className="w-5 h-5 fill-current text-slate-400 group-hover:text-white" viewBox="0 0 24 24" aria-hidden="true">
@@ -78,8 +86,8 @@ const Footer = () => {
                   </svg>
                 </a>
 
-             </div>
-           </div>
+              </div>
+            </div>
         </div>
 
         <div className="flex flex-col md:flex-row justify-between items-center pt-8 border-t border-slate-800 text-xs text-slate-500">

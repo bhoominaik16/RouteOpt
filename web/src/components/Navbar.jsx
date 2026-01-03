@@ -1,19 +1,48 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { auth, db } from '../firebase'; // Import your firebase config
+import { doc, getDoc } from 'firebase/firestore';
 import toast from 'react-hot-toast';
 
 const Navbar = () => {
   const navigate = useNavigate();
   const [showDropdown, setShowDropdown] = useState(false);
+  const [user, setUser] = useState(null);
+  const [userData, setUserData] = useState(null);
   const dropdownRef = useRef(null);
 
-  const user = JSON.parse(localStorage.getItem('user'));
+  useEffect(() => {
+    // 🔐 Real-time Firebase Auth Listener
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      setUser(currentUser);
+      
+      if (currentUser) {
+        // Fetch additional data (like name) from Firestore since Firebase Auth 
+        // sometimes takes a second to update the profile display name
+        const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+        if (userDoc.exists()) {
+          setUserData(userDoc.data());
+        }
+      } else {
+        setUserData(null);
+      }
+    });
 
-  const handleLogout = () => {
-    localStorage.removeItem('user');
-    toast.success('Logged out successfully');
-    setShowDropdown(false);
-    navigate('/auth');
+    // Cleanup listener on unmount
+    return () => unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      toast.success('Logged out successfully');
+      setShowDropdown(false);
+      navigate('/auth');
+    // eslint-disable-next-line no-unused-vars
+    } catch (error) {
+      toast.error("Error logging out");
+    }
   };
 
   useEffect(() => {
@@ -32,7 +61,6 @@ const Navbar = () => {
       
         <Link to="/" className="flex items-center gap-3 group">
           <div className="bg-emerald-600/10 p-2 rounded-xl group-hover:bg-emerald-600/20 transition-colors">
-       
             <img 
               src="/Logo.png" 
               alt="RouteOpt Logo" 
@@ -47,31 +75,31 @@ const Navbar = () => {
         <div className="flex items-center gap-6">
           {user ? (
             <>
-      
               <Link to="/ride-selection" className="bg-slate-900 text-white px-5 py-2 rounded-full font-bold hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300">
                 Start a Ride
               </Link>
 
-       
               <div className="relative" ref={dropdownRef}>
                 <button 
                   onClick={() => setShowDropdown(!showDropdown)}
                   className="flex items-center gap-2 p-1 hover:bg-slate-100 rounded-full transition outline-none"
                 >
                   <div className="w-9 h-9 bg-slate-900 rounded-full flex items-center justify-center text-white font-bold uppercase shadow-sm border-2 border-white ring-2 ring-emerald-50">
-                    {user.name[0]}
+                    {/* Display first letter of name from Firestore or Email as fallback */}
+                    {userData?.name ? userData.name[0] : user.email[0]}
                   </div>
                   <svg className={`w-4 h-4 text-slate-400 transition-transform ${showDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
                   </svg>
                 </button>
 
-          
                 {showDropdown && (
                   <div className="absolute right-0 mt-2 w-56 bg-white border border-slate-100 rounded-2xl shadow-xl py-2 animate-in fade-in zoom-in-95 duration-200 origin-top-right">
                     <div className="px-4 py-3 border-b border-slate-50 mb-1">
                       <p className="text-xs text-slate-400 font-medium uppercase tracking-wider mb-1">Signed in as</p>
-                      <p className="text-sm font-bold text-slate-800 truncate">{user.name}</p>
+                      <p className="text-sm font-bold text-slate-800 truncate">
+                        {userData?.name || "User"}
+                      </p>
                       <p className="text-xs text-slate-500 truncate">{user.email}</p>
                     </div>
                     <ul>
