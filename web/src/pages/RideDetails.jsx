@@ -5,9 +5,9 @@ import { db } from '../firebase';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import toast from 'react-hot-toast';
-import axios from 'axios'; // Import Axios for geocoding
+import axios from 'axios'; 
 
-// Fix Icons
+// Fix Leaflet Icons
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
@@ -15,18 +15,22 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
+// 🛡️ SAFETY HELPER: Prevents "undefined" crashes
+const isValidCoords = (c) => {
+  return c && typeof c.lat === 'number' && typeof c.lng === 'number';
+};
+
 const RideDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const location = useLocation(); // Hook to access passed state (Mulund)
+  const location = useLocation(); 
   
   const [user] = useState(() => JSON.parse(localStorage.getItem('user')));
   const [ride, setRide] = useState(null);
   const [loading, setLoading] = useState(true);
   const [requesting, setRequesting] = useState(false);
   
-  // 📍 STATE FOR PICKUP LOGIC
-  // If user searched "Mulund", use that. Otherwise default to Ride Source.
+  // Custom Pickup Logic (from Search Page)
   const passedPickup = location.state?.userPickup || "";
   const [customPickupCoords, setCustomPickupCoords] = useState(null);
 
@@ -50,7 +54,7 @@ const RideDetails = () => {
     fetchRide();
   }, [id, navigate]);
 
-  // 🌍 GEOCODE THE PASSENGER'S PICKUP (Mulund -> Lat/Lng)
+  // Geocode User's Pickup (e.g., "Mulund")
   useEffect(() => {
       const resolvePickup = async () => {
           if (passedPickup) {
@@ -82,32 +86,25 @@ const RideDetails = () => {
     const toastId = toast.loading("Sending request...");
 
     try {
-      // 🧠 LOGIC: Use Custom Pickup if available, else Ride Source
       const finalPickupName = passedPickup || ride.source;
       const finalPickupCoords = customPickupCoords || ride.sourceCoords;
 
       await addDoc(collection(db, "ride_requests"), {
         rideId: id,
-        
-        // 🟢 FIX 1: Driver Info (So it's not "Unknown")
         driverId: ride.driverId,
         driverName: ride.driverName || "Unknown Driver", 
-        
         takerId: user.uid,
         takerName: user.name || "Unknown User",
         takerImage: user.profileImage || "",
-        
-        // 🟢 FIX 2: Correct Pickup Location (Mulund, not Thane)
         pickupLocation: finalPickupName, 
-        pickupCoords: finalPickupCoords, 
-        
+        pickupCoords: finalPickupCoords || null, // Ensure valid value
         price: ride.pricePerSeat || 0,
         status: "PENDING", 
         timestamp: serverTimestamp()
       });
 
       toast.success("Request Sent! Driver notified.", { id: toastId });
-      navigate('/history'); // Send them to history to see status
+      navigate('/history'); 
 
     } catch (error) {
       console.error("Request failed:", error);
@@ -119,6 +116,16 @@ const RideDetails = () => {
 
   if (loading) return <div className="p-10 text-center text-slate-400">Loading ride details...</div>;
   if (!ride) return null;
+
+  // 🛡️ CRASH GUARD: Determine Map Center safely
+  const mapCenter = isValidCoords(ride.sourceCoords) 
+      ? [ride.sourceCoords.lat, ride.sourceCoords.lng] 
+      : [19.0760, 72.8777]; // Default to Mumbai
+
+  // 🛡️ CRASH GUARD: Filter out bad points from route
+  const safeRoute = (ride.routeGeometry || [])
+      .filter(p => isValidCoords(p))
+      .map(p => [p.lat, p.lng]);
 
   return (
     <div className="min-h-screen bg-slate-50 p-6 flex justify-center items-center">
@@ -157,7 +164,6 @@ const RideDetails = () => {
                </div>
             </div>
 
-            {/* 📍 CONFIRMATION OF PICKUP */}
             {passedPickup && (
                 <div className="mt-8 bg-amber-50 border border-amber-200 p-4 rounded-xl">
                     <p className="text-xs font-bold text-amber-700 uppercase mb-1">Your Pickup Point</p>
@@ -193,14 +199,33 @@ const RideDetails = () => {
 
         {/* RIGHT: MAP */}
         <div className="bg-slate-200 relative min-h-[300px]">
-           <MapContainer center={ride.sourceCoords ? [ride.sourceCoords.lat, ride.sourceCoords.lng] : [19, 72]} zoom={11} style={{ height: '100%', width: '100%' }}>
+           {/* 🛡️ MAP CONTAINER with SAFE CENTER */}
+           <MapContainer center={mapCenter} zoom={11} style={{ height: '100%', width: '100%' }}>
               <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-              {ride.routeGeometry && <Polyline positions={ride.routeGeometry.map(p => [p.lat, p.lng])} color="#10b981" weight={5} />}
               
-              {/* Start/End Markers */}
-              {ride.sourceCoords && <Marker position={[ride.sourceCoords.lat, ride.sourceCoords.lng]}><Popup>Start: {ride.source}</Popup></Marker>}
-              {/* Passenger Pickup Marker (If customized) */}
-              {customPickupCoords && <Marker position={[customPickupCoords.lat, customPickupCoords.lng]}><Popup>Your Pickup: {passedPickup}</Popup></Marker>}
+              {/* 🛡️ SAFE POLYLINE */}
+              {safeRoute.length > 0 && <Polyline positions={safeRoute} color="#10b981" weight={5} />}
+              
+              {/* 🛡️ SAFE START MARKER */}
+              {isValidCoords(ride.sourceCoords) && (
+                  <Marker position={[ride.sourceCoords.lat, ride.sourceCoords.lng]}>
+                      <Popup>Start: {ride.source}</Popup>
+                  </Marker>
+              )}
+              
+              {/* 🛡️ SAFE END MARKER (from route geometry end) */}
+              {safeRoute.length > 0 && (
+                  <Marker position={safeRoute[safeRoute.length - 1]}>
+                      <Popup>End: {ride.destination}</Popup>
+                  </Marker>
+              )}
+
+              {/* 🛡️ SAFE PICKUP MARKER */}
+              {isValidCoords(customPickupCoords) && (
+                  <Marker position={[customPickupCoords.lat, customPickupCoords.lng]}>
+                      <Popup>Your Pickup: {passedPickup}</Popup>
+                  </Marker>
+              )}
            </MapContainer>
         </div>
       </div>
