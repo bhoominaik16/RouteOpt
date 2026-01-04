@@ -106,7 +106,7 @@ Traffic congestion and unsafe public commuting are major issues for students and
 
 | Name | Role | Key Contributions |
 | :--- | :--- | :--- |
-| **Vaishnavi Avhad** | **Full Stack Developer** | Core Ride Lifecycle, Geospatial Routing, SOS Architecture, UPI Payments |
+| **Vaishnavi Avhad** | **Full Stack Developer** | Core Ride Lifecycle, Geospatial Routing, SOS Architecture, UPI Payments, Deployment |
 | **Bhoomi Naik** | **Full Stack Developer** | Project Setup, Foundational Frontend Architecture, UI/UX Design|
 | **Saniya Kadam** | **Full Stack Developer** | Firebase Authentication, Admin Dashboard Implementation, UI/UX Refinement |
 
