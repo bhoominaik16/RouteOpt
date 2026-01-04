@@ -1,331 +1,296 @@
 import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-leaflet';
-import L from 'leaflet';
-import toast from 'react-hot-toast';
-import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-
-// 🔥 FIREBASE IMPORTS
-import { db } from '../firebase'; 
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import axios from 'axios';
+import toast from 'react-hot-toast';
+import { db } from '../firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
-// --- STYLING FIXES (Leaflet Default Marker Bug) ---
-const redIcon = new L.Icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41]
+// Fix Leaflet Icons
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
-
-// Helper component to move map view
-function MapUpdater({ center }) {
-  const map = useMap();
-  useEffect(() => {
-    if (center) map.setView(center, 13);
-  }, [center, map]);
-  return null;
-}
 
 const RideGiver = () => {
   const navigate = useNavigate();
+  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('user')));
+
+  const [source, setSource] = useState('');
+  const [destination, setDestination] = useState('');
+  const [seats, setSeats] = useState(3);
+  const [dateTime, setDateTime] = useState('');
   
-  // 👤 Get User from Local Storage
-  const [user] = useState(() => {
-    return JSON.parse(localStorage.getItem('user')) || null;
-  });
+  // 🛡️ NEW: SAFETY TOGGLES
+  const [sameGender, setSameGender] = useState(false);
+  const [sameInstitution, setSameInstitution] = useState(false);
+
+  // Route Data
+  const [route, setRoute] = useState(null);
+  const [distance, setDistance] = useState(null); 
+  const [duration, setDuration] = useState(null); 
+  const [sourceCoords, setSourceCoords] = useState(null);
+  const [calculatedPrice, setCalculatedPrice] = useState(0); 
 
   const [loading, setLoading] = useState(false);
-  const [availableRoutes, setAvailableRoutes] = useState([]);
-  const [mapCenter, setMapCenter] = useState([20.5937, 78.9629]); 
-  const [coords, setCoords] = useState({ start: null, end: null });
-  const [exactNames, setExactNames] = useState({ src: '', dest: '' });
-  
-  const [formData, setFormData] = useState({
-    source: '',
-    destination: '',
-    timeMode: 'immediate',
-    scheduledTime: '',
-    seats: 1,
-    genderPreference: false,
-    sameInstitution: false,
-    selectedRoute: null
-  });
 
-  // 🌍 1. FETCH ROUTES (Using Photon API to fix CORS)
-  const fetchRouteOptions = async () => {
-    if (!formData.source || !formData.destination) {
-      toast.error("Please enter both source and destination");
-      return;
+  // --- 1. GEOCODING ---
+  const getCoordinates = async (address) => {
+    try {
+      const res = await axios.get(`https://photon.komoot.io/api/?q=${encodeURIComponent(address)}&limit=1&lat=19.07&lon=72.87`);
+      if (res.data.features.length > 0) {
+        const [lng, lat] = res.data.features[0].geometry.coordinates;
+        return { lat, lng };
+      }
+      return null;
+    } catch (error) {
+      console.error("Geocoding Error", error);
+      return null;
     }
+  };
+
+  // --- 2. ROUTE CALCULATION ---
+  const handleCalculateRoute = async (e) => {
+    e.preventDefault();
+    if (!source || !destination) return toast.error("Please enter both locations");
 
     setLoading(true);
+    const toastId = toast.loading("Calculating optimal route...");
+
     try {
-      // Use Photon API (No CORS issues, free, fast)
-      const srcRes = await axios.get(`https://photon.komoot.io/api/?q=${encodeURIComponent(formData.source)}&limit=1`);
-      const destRes = await axios.get(`https://photon.komoot.io/api/?q=${encodeURIComponent(formData.destination)}&limit=1`);
+      const srcCoords = await getCoordinates(source);
+      const destCoords = await getCoordinates(destination);
 
-      if (!srcRes.data.features.length || !destRes.data.features.length) {
-        throw new Error("Could not find locations. Try being more specific.");
+      if (!srcCoords || !destCoords) {
+        toast.error("Locations not found. Try adding 'Mumbai'.", { id: toastId });
+        setLoading(false);
+        return;
       }
-
-      // Extract Data (Photon gives [Lon, Lat])
-      const srcFeature = srcRes.data.features[0];
-      const destFeature = destRes.data.features[0];
-
-      setExactNames({
-        src: srcFeature.properties.name + ", " + (srcFeature.properties.city || srcFeature.properties.country || ""),
-        dest: destFeature.properties.name + ", " + (destFeature.properties.city || destFeature.properties.country || "")
-      });
-
-      // Convert [Lon, Lat] -> [Lat, Lon] for Leaflet
-      const start = [srcFeature.geometry.coordinates[1], srcFeature.geometry.coordinates[0]]; 
-      const end = [destFeature.geometry.coordinates[1], destFeature.geometry.coordinates[0]]; 
       
-      setCoords({ start, end });
-      setMapCenter(start);
+      setSourceCoords(srcCoords); 
 
-      // Call OSRM (Requires Lon,Lat string format)
-      const routeRes = await axios.get(
-        `https://router.project-osrm.org/route/v1/driving/${start[1]},${start[0]};${end[1]},${end[0]}?alternatives=true&overview=full&geometries=geojson`
+      const response = await axios.get(
+        `https://router.project-osrm.org/route/v1/driving/${srcCoords.lng},${srcCoords.lat};${destCoords.lng},${destCoords.lat}?overview=full&geometries=geojson`
       );
 
-      const routes = routeRes.data.routes.map((r, index) => ({
-        id: index,
-        name: r.legs[0].summary ? `via ${r.legs[0].summary}` : `Option ${index + 1}`,
-        distance: (r.distance / 1000).toFixed(1),
-        duration: Math.round(r.duration / 60),
-        // Flip geometry back to [Lat, Lon] for Leaflet Polyline
-        geometry: r.geometry.coordinates.map(coord => [coord[1], coord[0]]) 
-      }));
+      if (response.data.routes.length > 0) {
+        const routeData = response.data.routes[0];
+        const decodedPath = routeData.geometry.coordinates.map(coord => ({ lat: coord[1], lng: coord[0] }));
+        
+        setRoute(decodedPath);
+        
+        const distKm = (routeData.distance / 1000).toFixed(1);
+        const durMin = Math.round(routeData.duration / 60);
+        
+        setDistance(distKm);
+        setDuration(durMin);
 
-      setAvailableRoutes(routes);
-      setFormData(prev => ({ ...prev, selectedRoute: routes[0] }));
-      toast.success(`Found ${routes.length} possible routes!`);
+        // Price: ₹7 per KM
+        const price = Math.round(distKm * 7);
+        setCalculatedPrice(price < 10 ? 10 : price); 
 
+        toast.success(`Route Found: ${distKm} km`, { id: toastId });
+      }
     } catch (error) {
       console.error(error);
-      toast.error("Error finding location. Try specific city names.");
+      toast.error("Failed to calculate route", { id: toastId });
     } finally {
       setLoading(false);
     }
   };
 
-  // 🚀 2. SAVE TO FIREBASE (Fixes 'Nested Arrays' Error)
-  const handlePostRide = async (e) => {
-    e.preventDefault();
-
-    if (!user) {
-        toast.error("Please log in to post a ride!");
-        navigate('/auth');
-        return;
-    }
-
-    if (!formData.selectedRoute) {
-      toast.error("Please select a route first");
-      return;
-    }
+  // --- 3. POST RIDE ---
+  const handlePostRide = async () => {
+    if (!route || !user) return;
+    
+    if(!window.confirm(`Post this ride for ₹${calculatedPrice} per seat?`)) return;
 
     setLoading(true);
-
     try {
-        // Convert [[lat, lng], ...] array to [{lat, lng}, ...] objects
-        // This fixes the Firebase "Nested arrays not supported" error
-        const serializedGeometry = formData.selectedRoute.geometry.map(point => ({
-            lat: point[0], 
-            lng: point[1]
-        }));
-
-        const rideData = {
-            driverId: user.uid,
-            driverName: user.name || "Unknown Driver",
-            driverEmail: user.email,
-            driverImage: user.profileImage || "",
-            
-            source: exactNames.src,
-            destination: exactNames.dest,
-            sourceCoords: coords.start,
-            destCoords: coords.end,
-            
-            // Save the serialized route object
-            routeGeometry: serializedGeometry, 
-            
-            distance: formData.selectedRoute.distance,
-            duration: formData.selectedRoute.duration,
-            
-            seatsAvailable: parseInt(formData.seats),
-            genderPreference: formData.genderPreference,
-            sameInstitution: formData.sameInstitution,
-            
-            departureTime: formData.timeMode === 'immediate' ? 'NOW' : formData.scheduledTime,
-            status: 'ACTIVE',
-            createdAt: serverTimestamp()
-        };
-
-        await addDoc(collection(db, "rides"), rideData);
-
-        toast.success('Ride posted successfully! Redirecting...');
+      await addDoc(collection(db, "rides"), {
+        driverId: user.uid,
+        driverName: user.name,
+        driverEmail: user.email,
+        driverImage: user.profileImage || "",
+        driverGender: user.gender || "Not Specified",
         
-        setTimeout(() => {
-            navigate('/ride-giver-dashboard');
-        }, 1500);
+        source,
+        sourceCoords,
+        destination,
+        
+        seatsAvailable: parseInt(seats),
+        departureTime: dateTime || "NOW",
+        
+        distance,
+        duration,
+        routeGeometry: route,
+        
+        vehicleType: 'car',
+        pricePerSeat: calculatedPrice,
 
+        // 🛡️ SAVE PREFERENCES TO DB
+        sameGender: sameGender,
+        sameInstitution: sameInstitution,
+
+        status: "ACTIVE",
+        createdAt: serverTimestamp(),
+        passengers: []
+      });
+
+      toast.success("Ride Posted Successfully!");
+      navigate('/ride-giver-dashboard');
     } catch (error) {
-        console.error("Error posting ride:", error);
-        toast.error(`Failed: ${error.message}`);
+      console.error(error);
+      toast.error("Failed to post ride");
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
   };
 
+  const RecenterMap = ({ coords }) => {
+    const map = useMap();
+    useEffect(() => {
+      if (coords) map.setView([coords[0].lat, coords[0].lng], 13);
+    }, [coords, map]);
+    return null;
+  };
+
+  if (!user) return <div className="p-10 text-center">Please Login First</div>;
+
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
-      <div className="max-w-7xl mx-auto px-6 py-12 grid lg:grid-cols-2 gap-8">
-        
-        {/* LEFT: Form Section */}
-        <div className="bg-white rounded-3xl shadow-xl p-8 border border-slate-100 h-fit">
-          <h2 className="text-3xl font-bold text-slate-900 mb-8 flex items-center gap-3">
-            <span className="text-emerald-600">📍</span> Post Your Route
-          </h2>
+    <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row">
+      {/* LEFT: FORM */}
+      <div className="w-full md:w-1/3 p-6 md:p-10 bg-white border-r border-slate-200 overflow-y-auto z-10 shadow-xl">
+        <h1 className="text-3xl font-black text-slate-900 mb-2">Offer a Ride</h1>
+        <p className="text-slate-500 mb-8">Share your car, save costs.</p>
 
-          <form onSubmit={handlePostRide} className="space-y-6">
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Source</label>
+        <form onSubmit={handleCalculateRoute} className="space-y-5">
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1">Pickup Location</label>
+            <input 
+              type="text" required 
+              className="w-full p-4 bg-slate-50 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none font-medium"
+              placeholder="e.g. Chembur Naka"
+              value={source} onChange={(e) => setSource(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1">Destination</label>
+            <input 
+              type="text" required 
+              className="w-full p-4 bg-slate-50 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none font-medium"
+              placeholder="e.g. VESIT Campus"
+              value={destination} onChange={(e) => setDestination(e.target.value)}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+             <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Seats</label>
                 <input 
-                  type="text" required placeholder="Pickup location"
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none"
-                  onBlur={(e) => setFormData({...formData, source: e.target.value})}
+                  type="number" min="1" max="6" required 
+                  className="w-full p-4 bg-slate-50 rounded-xl border border-slate-200 outline-none font-bold"
+                  value={seats} onChange={(e) => setSeats(e.target.value)}
                 />
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Destination</label>
+             </div>
+             <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Time</label>
                 <input 
-                  type="text" required placeholder="Office/College"
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none"
-                  onBlur={(e) => setFormData({...formData, destination: e.target.value})}
+                  type="datetime-local" 
+                  className="w-full p-4 bg-slate-50 rounded-xl border border-slate-200 outline-none text-sm font-bold"
+                  value={dateTime} onChange={(e) => setDateTime(e.target.value)}
                 />
-              </div>
-            </div>
+             </div>
+          </div>
 
-            <button 
-              type="button" onClick={fetchRouteOptions} disabled={loading}
-              className="w-full py-3 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl font-bold hover:bg-emerald-100 transition"
-            >
-              {loading ? "Calculating..." : "Find Available Routes"}
-            </button>
-
-            {availableRoutes.length > 0 && (
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Select Best Route</label>
-                <select 
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none bg-white font-medium"
-                  onChange={(e) => setFormData({...formData, selectedRoute: availableRoutes[e.target.value]})}
-                >
-                  {availableRoutes.map((route, idx) => (
-                    <option key={idx} value={idx}>
-                      {route.name} ({route.distance} km, {route.duration} mins)
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            <div className="p-4 bg-slate-50 rounded-2xl">
-              <label className="block text-sm font-bold text-slate-700 mb-3">Departure Time</label>
-              <div className="flex gap-4 mb-4">
-                {['immediate', 'schedule'].map((mode) => (
-                  <button
-                    key={mode} type="button"
-                    onClick={() => setFormData({...formData, timeMode: mode})}
-                    className={`flex-1 py-2 rounded-lg font-bold transition ${formData.timeMode === mode ? 'bg-emerald-600 text-white shadow-md' : 'bg-white text-slate-500'}`}
-                  >
-                    {mode === 'immediate' ? 'Now' : 'Schedule'}
-                  </button>
-                ))}
-              </div>
-              {formData.timeMode === 'schedule' && (
-                <input type="datetime-local" className="w-full px-4 py-3 rounded-xl border border-slate-200" onChange={(e) => setFormData({...formData, scheduledTime: e.target.value})} />
-              )}
-            </div>
-
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Seats</label>
-                <select className="w-full px-4 py-3 rounded-xl border border-slate-200" onChange={(e) => setFormData({...formData, seats: e.target.value})}>
-                  {[1, 2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{n}</option>)}
-                </select>
-              </div>
-              
-              <div className="flex items-center justify-between p-4 bg-emerald-50 rounded-2xl border border-emerald-100 h-[52px] mt-7">
-                <span className="font-bold text-emerald-900 text-sm">Same-Gender Only</span>
-                <button type="button" onClick={() => setFormData({...formData, genderPreference: !formData.genderPreference})} className={`w-10 h-5 rounded-full relative transition-colors ${formData.genderPreference ? 'bg-emerald-600' : 'bg-slate-300'}`}>
-                  <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${formData.genderPreference ? 'left-5' : 'left-1'}`} />
-                </button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between p-4 bg-blue-50 rounded-2xl border border-blue-100">
-              <div>
-                <span className="font-bold text-blue-900 text-md block">Same Institution Only</span>
-                <p className="text-sm text-blue-700">Limit visibility to your verified college/office</p>
-              </div>
-              <button 
-                type="button" 
-                onClick={() => setFormData({...formData, sameInstitution: !formData.sameInstitution})} 
-                className={`w-10 h-5 rounded-full relative transition-colors ${formData.sameInstitution ? 'bg-blue-600' : 'bg-slate-300'}`}
-              >
-                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${formData.sameInstitution ? 'left-5' : 'left-1'}`} />
-              </button>
-            </div>
-
-            <button 
-              type="submit" 
-              disabled={loading}
-              className={`w-full text-white font-bold py-4 rounded-2xl transition shadow-xl ${loading ? 'bg-slate-400 cursor-not-allowed' : 'bg-slate-900 hover:bg-slate-800'}`}
-            >
-              {loading ? "Processing..." : "Post Ride Details"}
-            </button>
-          </form>
-        </div>
-
-        {/* RIGHT: Map Section */}
-        <div className="h-[400px] lg:h-full min-h-[550px] bg-slate-200 rounded-3xl overflow-hidden border-4 border-white shadow-2xl relative">
-          <MapContainer center={mapCenter} zoom={13} style={{ height: '100%', width: '100%' }}>
-            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            <MapUpdater center={mapCenter} />
+          {/* 🛡️ NEW: SAFETY PREFERENCES SECTION */}
+          <div className="space-y-3 pt-2">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Who can join?</h3>
             
-            {coords.start && (
-              <Marker position={coords.start} icon={redIcon}>
-                <Popup>Pickup: {exactNames.src}</Popup>
-              </Marker>
-            )}
-            
-            {coords.end && (
-              <Marker position={coords.end} icon={redIcon}>
-                <Popup>Dropoff: {exactNames.dest}</Popup>
-              </Marker>
-            )}
-
-            {formData.selectedRoute && (
-              <Polyline 
-                positions={formData.selectedRoute.geometry} 
-                color="#EF4444" 
-                weight={6} 
-                opacity={0.8} 
-              />
-            )}
-          </MapContainer>
-          
-          {formData.selectedRoute && (
-            <div className="absolute top-4 right-4 bg-white/95 backdrop-blur px-4 py-2 rounded-xl shadow-lg z-[1000] border border-red-100">
-              <p className="text-xs font-bold text-slate-500 uppercase">Efficiency Score</p>
-              <p className="text-xl font-black text-red-600">92%</p>
+            {/* Toggle 1: Same Gender */}
+            <div className={`flex items-center justify-between p-4 rounded-xl border cursor-pointer transition-all ${sameGender ? 'bg-emerald-50 border-emerald-500' : 'bg-white border-slate-200'}`} onClick={() => setSameGender(!sameGender)}>
+                <div className="flex items-center gap-3">
+                    <span className="text-xl">👩‍🦰</span>
+                    <div>
+                        <p className={`text-sm font-bold ${sameGender ? 'text-emerald-900' : 'text-slate-700'}`}>Same Gender Only</p>
+                        <p className="text-[10px] text-slate-400">Only {user.gender || 'your gender'} can request</p>
+                    </div>
+                </div>
+                <div className={`w-10 h-5 rounded-full relative transition-colors ${sameGender ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                    <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${sameGender ? 'left-6' : 'left-1'}`} />
+                </div>
             </div>
+
+            {/* Toggle 2: Same Institution */}
+            <div className={`flex items-center justify-between p-4 rounded-xl border cursor-pointer transition-all ${sameInstitution ? 'bg-blue-50 border-blue-500' : 'bg-white border-slate-200'}`} onClick={() => setSameInstitution(!sameInstitution)}>
+                <div className="flex items-center gap-3">
+                    <span className="text-xl">🎓</span>
+                    <div>
+                        <p className={`text-sm font-bold ${sameInstitution ? 'text-blue-900' : 'text-slate-700'}`}>Same Institution Only</p>
+                        <p className="text-[10px] text-slate-400">Verified by email domain</p>
+                    </div>
+                </div>
+                <div className={`w-10 h-5 rounded-full relative transition-colors ${sameInstitution ? 'bg-blue-500' : 'bg-slate-300'}`}>
+                    <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${sameInstitution ? 'left-6' : 'left-1'}`} />
+                </div>
+            </div>
+          </div>
+
+          <button 
+            type="submit" disabled={loading}
+            className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-lg hover:bg-slate-800 transition active:scale-95 disabled:opacity-50"
+          >
+            {loading ? "Calculating..." : "Preview Route"}
+          </button>
+        </form>
+
+        {/* PRICE PREVIEW CARD */}
+        {distance && (
+          <div className="mt-8 animate-in slide-in-from-bottom-5 fade-in duration-500">
+             <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-2xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-4 opacity-10 text-6xl">💰</div>
+                
+                <div className="flex justify-between items-end mb-2">
+                   <div>
+                      <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Estimated Earnings</p>
+                      <h3 className="text-4xl font-black text-emerald-900">₹{calculatedPrice}</h3>
+                      <p className="text-xs text-emerald-700 font-medium">per passenger</p>
+                   </div>
+                   <div className="text-right">
+                      <p className="text-xl font-bold text-slate-700">{distance} km</p>
+                      <p className="text-xs text-slate-400 font-bold uppercase">Distance</p>
+                   </div>
+                </div>
+                <div className="w-full h-1 bg-emerald-200 rounded-full mt-2" />
+                <p className="text-[10px] text-emerald-600/70 mt-2 text-center">Based on standard ₹7/km fuel sharing rate</p>
+             </div>
+
+             <button 
+               onClick={handlePostRide} disabled={loading}
+               className="w-full mt-4 py-4 bg-emerald-600 text-white rounded-2xl font-bold shadow-xl shadow-emerald-200 hover:bg-emerald-700 transition active:scale-95"
+             >
+               Confirm & Post Ride
+             </button>
+          </div>
+        )}
+      </div>
+
+      {/* RIGHT: MAP */}
+      <div className="flex-1 bg-slate-200 relative">
+        <MapContainer center={[19.0760, 72.8777]} zoom={11} style={{ height: '100%', width: '100%' }}>
+          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+          {route && <RecenterMap coords={route} />}
+          {route && (
+             <>
+               <Marker position={[route[0].lat, route[0].lng]}><Popup>Start</Popup></Marker>
+               <Marker position={[route[route.length-1].lat, route[route.length-1].lng]}><Popup>End</Popup></Marker>
+             </>
           )}
-        </div>
-
+        </MapContainer>
       </div>
     </div>
   );

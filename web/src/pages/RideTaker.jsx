@@ -304,9 +304,14 @@ const RideTaker = () => {
                       <div className="bg-emerald-50 text-emerald-700 px-4 py-1.5 rounded-xl text-sm font-black shadow-sm border border-emerald-100">
                         {ride.departureTime === 'NOW' ? 'Leaving Now' : new Date(ride.departureTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </div>
+
                       <button 
-                        onClick={() => navigate(`/ride-details/${ride.id}`)}
-                        className="text-emerald-600 font-bold text-sm hover:text-emerald-700 transition-colors flex items-center gap-1 group-hover:translate-x-1 duration-300"
+                        onClick={() => navigate(`/ride-details/${ride.id}`, {
+                            state: { 
+                                userPickup: filters.source, 
+                            } 
+                        })}
+                        className="text-emerald-600 font-bold text-sm hover:text-emerald-700..."
                       >
                         View Details <span className="text-lg">→</span>
                       </button>
