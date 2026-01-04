@@ -27,7 +27,7 @@ function App() {
 
   const isAdminPage = location.pathname.startsWith('/admin');
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen  bg-slate-50 flex flex-col">
       <Toaster position="top-center" reverseOrder={false} />
       {!isAdminPage && <Navbar/>}
       <Routes className="flex-grow">
