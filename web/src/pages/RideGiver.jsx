@@ -10,33 +10,40 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 // Fix Leaflet Icons
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+  iconRetinaUrl:
+    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png",
+  iconUrl:
+    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png",
+  shadowUrl:
+    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
 });
 
 const RideGiver = () => {
   const navigate = useNavigate();
   const [user] = useState(() => JSON.parse(localStorage.getItem('user')));
 
-  const [source, setSource] = useState('');
-  const [destination, setDestination] = useState('');
+  const [source, setSource] = useState("");
+  const [destination, setDestination] = useState("");
   const [seats, setSeats] = useState(3);
   const [dateTime, setDateTime] = useState('');
   const [sameGender, setSameGender] = useState(false);
   const [sameInstitution, setSameInstitution] = useState(false);
 
   const [route, setRoute] = useState(null);
-  const [distance, setDistance] = useState(null); 
-  const [duration, setDuration] = useState(null); 
+  const [distance, setDistance] = useState(null);
+  const [duration, setDuration] = useState(null);
   const [sourceCoords, setSourceCoords] = useState(null);
-  const [calculatedPrice, setCalculatedPrice] = useState(0); 
+  const [calculatedPrice, setCalculatedPrice] = useState(0);
 
   const [loading, setLoading] = useState(false);
 
   const getCoordinates = async (address) => {
     try {
-      const res = await axios.get(`https://photon.komoot.io/api/?q=${encodeURIComponent(address)}&limit=1&lat=19.07&lon=72.87`);
+      const res = await axios.get(
+        `https://photon.komoot.io/api/?q=${encodeURIComponent(
+          address
+        )}&limit=1&lat=19.07&lon=72.87`
+      );
       if (res.data.features.length > 0) {
         const [lng, lat] = res.data.features[0].geometry.coordinates;
         return { lat, lng };
@@ -307,3 +314,4 @@ const executePostRide = async () => {
 };
 
 export default RideGiver;
+git
