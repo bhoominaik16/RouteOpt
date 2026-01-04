@@ -93,6 +93,8 @@ const RideDetails = () => {
   }, [user, id]);
 
   // 3. HANDLE REQUEST SEAT
+  // Inside src/pages/RideDetails.jsx
+
   const handleRequestSeat = async () => {
     if (!user) {
       toast.error("Please login to request a ride");
@@ -100,7 +102,6 @@ const RideDetails = () => {
       return;
     }
     
-    // Safety Checks
     if (ride.seatsAvailable <= 0) {
       toast.error("Ride is full!");
       return;
@@ -114,14 +115,18 @@ const RideDetails = () => {
     const toastId = toast.loading("Sending request to driver...");
 
     try {
-      // Create Ticket
+      // 👇 THE FIX: We added 'pickupCoords' here
       await addDoc(collection(db, "ride_requests"), {
         rideId: id,
         driverId: ride.driverId,
         takerId: user.uid,
         takerName: user.name || "Unknown",
         takerImage: user.profileImage || "",
-        pickupLocation: ride.source, // Could be enhanced to allow custom pickup selection
+        
+        // Ensure we send BOTH name and coordinates
+        pickupLocation: ride.source, 
+        pickupCoords: ride.sourceCoords || null, 
+        
         status: "PENDING", 
         timestamp: serverTimestamp()
       });
