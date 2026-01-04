@@ -8,6 +8,7 @@ import toast from "react-hot-toast";
 const Navbar = () => {
   const navigate = useNavigate();
   const [showDropdown, setShowDropdown] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // 🔥 State for mobile toggle
   const [user, setUser] = useState(null);
 
   const [localData, setLocalData] = useState(
@@ -49,6 +50,7 @@ const Navbar = () => {
 
       toast.success("Logged out successfully");
       setShowDropdown(false);
+      setIsMobileMenuOpen(false);
       navigate("/");
     } catch (error) {
       console.error(error);
@@ -67,9 +69,10 @@ const Navbar = () => {
   }, []);
 
   return (
-    /* 🔥 UPDATED UI: Deep Slate Gradient with Emerald Accent for high contrast against white pages */
-    <nav className="sticky top-0 z-[1000] bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border-b-4 border-emerald-500 px-8 py-4 shadow-2xl">
+    /* 🔥 UI KEPT SAME: Solid Slate Gradient with your emerald border-b-4 intact */
+    <nav className="sticky top-0 z-[1000] bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border-b-4 border-emerald-500 px-4 md:px-8 py-4 shadow-2xl">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
+        {/* LOGO */}
         <Link to="/" className="flex items-center gap-3 group">
           <div className="bg-white/10 p-2 rounded-lg group-hover:bg-emerald-500/20 transition-colors">
             <img
@@ -83,10 +86,10 @@ const Navbar = () => {
           </span>
         </Link>
 
-        <div className="flex items-center gap-6">
+        {/* --- DESKTOP NAVIGATION (Hidden on Mobile) --- */}
+        <div className="hidden md:flex items-center gap-6">
           {user ? (
             <>
-              {/* Start a Ride button - Emerald contrast against the dark nav */}
               <Link
                 to="/ride-selection"
                 className="bg-emerald-500 text-slate-900 px-6 py-2 rounded-lg font-black uppercase tracking-widest hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-900/40 text-xs"
@@ -99,7 +102,7 @@ const Navbar = () => {
                   onClick={() => setShowDropdown(!showDropdown)}
                   className="flex items-center gap-2 p-1 hover:bg-white/10 rounded-full transition outline-none"
                 >
-                  <div className="w-9 h-9 rounded-full flex items-center justify-center text-slate-900 font-bold uppercase shadow-sm border-2 border-emerald-400 overflow-hidden bg-emerald-50">
+                  <div className="w-9 h-9 rounded-full flex items-center justify-center text-slate-900 font-bold uppercase border-2 border-emerald-400 overflow-hidden bg-emerald-50">
                     {localData?.profileImage ? (
                       <img
                         src={localData.profileImage}
@@ -112,7 +115,6 @@ const Navbar = () => {
                       </span>
                     )}
                   </div>
-
                   <svg
                     className={`w-4 h-4 text-emerald-400 transition-transform ${
                       showDropdown ? "rotate-180" : ""
@@ -146,19 +148,6 @@ const Navbar = () => {
                           to="/profile"
                           className="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 transition"
                         >
-                          <svg
-                            className="w-4 h-4"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth="2"
-                              d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                            />
-                          </svg>
                           My Profile
                         </Link>
                       </li>
@@ -167,19 +156,6 @@ const Navbar = () => {
                           to="/ride-giver-dashboard"
                           className="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 transition"
                         >
-                          <svg
-                            className="w-4 h-4"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth="2"
-                              d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-                            />
-                          </svg>
                           Driver Dashboard
                         </Link>
                       </li>
@@ -188,19 +164,6 @@ const Navbar = () => {
                           to="/history"
                           className="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 transition"
                         >
-                          <svg
-                            className="w-4 h-4"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth="2"
-                              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                            />
-                          </svg>
                           Rides History
                         </Link>
                       </li>
@@ -209,19 +172,6 @@ const Navbar = () => {
                           onClick={handleLogout}
                           className="w-full text-left flex items-center gap-2 px-4 py-2.5 text-sm text-red-600 font-bold hover:bg-red-50 transition"
                         >
-                          <svg
-                            className="w-4 h-4"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth="2"
-                              d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                            />
-                          </svg>
                           Logout
                         </button>
                       </li>
@@ -239,7 +189,90 @@ const Navbar = () => {
             </Link>
           )}
         </div>
+
+        {/* --- MOBILE HAMBURGER BUTTON (Visible on Mobile Only) --- */}
+        <div className="md:hidden flex items-center">
+          <button
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="text-emerald-500 p-2 outline-none"
+          >
+            <svg
+              className="w-7 h-7"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              {isMobileMenuOpen ? (
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              ) : (
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M4 6h16M4 12h16m-7 6h7"
+                />
+              )}
+            </svg>
+          </button>
+        </div>
       </div>
+
+      {/* --- MOBILE MENU PANEL --- */}
+      {isMobileMenuOpen && (
+        <div className="md:hidden bg-slate-800 mt-4 rounded-2xl p-4 border border-white/10 animate-in slide-in-from-top-2 duration-300">
+          {user ? (
+            <div className="flex flex-col gap-3">
+              <Link
+                to="/ride-selection"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="bg-emerald-500 text-slate-900 py-3 rounded-xl font-black uppercase tracking-widest text-center text-xs"
+              >
+                Start a Ride
+              </Link>
+              <Link
+                to="/profile"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="text-white font-bold text-sm py-2 px-2"
+              >
+                My Profile
+              </Link>
+              <Link
+                to="/ride-giver-dashboard"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="text-white font-bold text-sm py-2 px-2"
+              >
+                Driver Dashboard
+              </Link>
+              <Link
+                to="/history"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="text-white font-bold text-sm py-2 px-2"
+              >
+                Rides History
+              </Link>
+              <button
+                onClick={handleLogout}
+                className="text-red-400 font-bold text-sm py-2 px-2 text-left mt-2 border-t border-white/5 pt-3"
+              >
+                Logout
+              </button>
+            </div>
+          ) : (
+            <Link
+              to="/auth"
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="bg-emerald-500 text-slate-900 py-3 rounded-xl font-black uppercase tracking-widest text-center text-xs block"
+            >
+              Get Started
+            </Link>
+          )}
+        </div>
+      )}
     </nav>
   );
 };
