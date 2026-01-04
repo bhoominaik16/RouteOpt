@@ -1,15 +1,76 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "../firebase";
+import { auth, db } from "../firebase"; // Ensure db is imported
+import { collection, getDocs, doc, getDoc } from "firebase/firestore";
 import dashboardPreview from "../assets/LandingImage.png";
 
 const Landing = () => {
   const [user, setUser] = useState(null);
+  const [topCommuters, setTopCommuters] = useState([]);
+  const [loadingLeaderboard, setLoadingLeaderboard] = useState(true);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, setUser);
     return () => unsub();
+  }, []);
+
+  // --- 🔥 FETCH REAL LEADERBOARD DATA ---
+  useEffect(() => {
+    const fetchLeaderboard = async () => {
+      try {
+        // 1. Get ALL rides (In a huge app, you'd use a cloud function for this)
+        const querySnapshot = await getDocs(collection(db, "rides"));
+        
+        const driverStats = {};
+
+        // 2. Aggregate Data: Sum up distance per Driver
+        querySnapshot.forEach((doc) => {
+           const ride = doc.data();
+           if (ride.driverId && ride.distance) {
+               const dist = parseFloat(ride.distance);
+               if (!driverStats[ride.driverId]) {
+                   driverStats[ride.driverId] = 0;
+               }
+               driverStats[ride.driverId] += dist;
+           }
+        });
+
+        // 3. Sort Drivers by Distance (Highest First) & Take Top 3
+        const sortedDriverIds = Object.keys(driverStats)
+            .sort((a, b) => driverStats[b] - driverStats[a])
+            .slice(0, 3);
+
+        // 4. Fetch User Details for the Top 3
+        const leaderboardData = await Promise.all(
+            sortedDriverIds.map(async (uid, index) => {
+                const userDoc = await getDoc(doc(db, "users", uid));
+                const userData = userDoc.exists() ? userDoc.data() : { name: "Unknown", email: "" };
+                
+                // Guess Institution from Email (Simple Logic)
+                const emailDomain = userData.email ? userData.email.split('@')[1] : "Partner";
+                const institution = emailDomain.includes('ves') ? 'VESIT' : 
+                                    emailDomain.includes('tcs') ? 'TCS' : 'Partner Org';
+
+                return {
+                    name: userData.name || "Anonymous",
+                    institution: institution,
+                    co2: (driverStats[uid] * 0.12).toFixed(1) + " kg", // Calculate CO2
+                    rank: index + 1,
+                    profileImage: userData.profileImage || null // Use real image
+                };
+            })
+        );
+
+        setTopCommuters(leaderboardData);
+      } catch (error) {
+        console.error("Error loading leaderboard:", error);
+      } finally {
+        setLoadingLeaderboard(false);
+      }
+    };
+
+    fetchLeaderboard();
   }, []);
 
   const stats = [
@@ -18,16 +79,9 @@ const Landing = () => {
     { label: 'Partner Colleges', value: '12', icon: '🏛️', color: 'text-purple-500' },
   ];
 
-  // Mock data for the leaderboard
-  const topCommuters = [
-    { name: "Arjun Mehta", institution: "VESIT", co2: "42.5kg", rank: 1, avatar: "👨‍💻" },
-    { name: "Sanya Iyer", institution: "VESIT", co2: "38.2kg", rank: 2, avatar: "👩‍🔬" },
-    { name: "Rahul Verma", institution: "TCS", co2: "31.9kg", rank: 3, avatar: "👨‍💼" },
-  ];
-
   return (
     <div className="bg-slate-50 text-slate-900">
-      {/* HERO SECTION - Keep existing code */}
+      {/* HERO SECTION */}
       <header className="pt-24 pb-28 px-6 max-w-7xl mx-auto grid lg:grid-cols-2 gap-16 items-center">
         <div className="space-y-8">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white border text-xs font-semibold text-slate-600">
@@ -61,7 +115,7 @@ const Landing = () => {
         </div>
       </header>
 
-      {/* NEW LEADERBOARD SECTION */}
+      {/* 🔥 NEW DYNAMIC LEADERBOARD SECTION */}
       <section className="py-24 bg-white border-y border-slate-100">
         <div className="max-w-7xl mx-auto px-6 grid lg:grid-cols-2 gap-16 items-center">
           <div>
@@ -72,49 +126,74 @@ const Landing = () => {
             <p className="text-slate-600 text-lg mb-8">
               Join the leaderboard and earn eco-badges for every ride you share. Verified impact by verified commuters.
             </p>
-            <div className="flex items-center gap-4 p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
-              <span className="text-2xl">🏆</span>
-              <p className="text-sm font-medium text-emerald-800">
-                Arjun is leading this month with <span className="font-bold">42.5kg</span> CO₂ saved!
-              </p>
-            </div>
+            
+            {/* Show Top 1 Highlight if data exists */}
+            {topCommuters.length > 0 && (
+                <div className="flex items-center gap-4 p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
+                <span className="text-2xl">🏆</span>
+                <p className="text-sm font-medium text-emerald-800">
+                    <span className="font-bold">{topCommuters[0].name}</span> is leading this month with <span className="font-bold">{topCommuters[0].co2}</span> CO₂ saved!
+                </p>
+                </div>
+            )}
           </div>
 
           <div className="space-y-4">
-            {topCommuters.map((commuter, idx) => (
-              <div 
-                key={idx} 
-                className={`flex items-center justify-between p-6 rounded-2xl border transition-all hover:scale-[1.02] ${
-                  commuter.rank === 1 
-                  ? 'bg-gradient-to-r from-emerald-50 to-white border-emerald-200 shadow-md' 
-                  : 'bg-white border-slate-100'
-                }`}
-              >
-                <div className="flex items-center gap-4">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg ${
-                    commuter.rank === 1 ? 'bg-amber-100 text-amber-600' : 
-                    commuter.rank === 2 ? 'bg-slate-100 text-slate-500' : 
-                    'bg-orange-100 text-orange-600'
-                  }`}>
-                    {commuter.rank}
-                  </div>
-                  <div className="text-3xl">{commuter.avatar}</div>
-                  <div>
-                    <h4 className="font-bold text-slate-900">{commuter.name}</h4>
-                    <p className="text-xs text-slate-500 font-semibold uppercase">{commuter.institution}</p>
-                  </div>
+            {loadingLeaderboard ? (
+                <div className="text-center py-10 text-slate-400 animate-pulse">
+                    Calculating Impact...
                 </div>
-                <div className="text-right">
-                  <p className="text-lg font-bold text-emerald-600">{commuter.co2}</p>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Saved</p>
+            ) : topCommuters.length === 0 ? (
+                <div className="p-6 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-center text-slate-500">
+                    No rides recorded yet. Be the first!
                 </div>
-              </div>
-            ))}
+            ) : (
+                topCommuters.map((commuter, idx) => (
+                <div 
+                    key={idx} 
+                    className={`flex items-center justify-between p-6 rounded-2xl border transition-all hover:scale-[1.02] ${
+                    commuter.rank === 1 
+                    ? 'bg-gradient-to-r from-emerald-50 to-white border-emerald-200 shadow-md' 
+                    : 'bg-white border-slate-100'
+                    }`}
+                >
+                    <div className="flex items-center gap-4">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg shrink-0 ${
+                        commuter.rank === 1 ? 'bg-amber-100 text-amber-600' : 
+                        commuter.rank === 2 ? 'bg-slate-100 text-slate-500' : 
+                        'bg-orange-100 text-orange-600'
+                    }`}>
+                        {commuter.rank}
+                    </div>
+                    
+                    {/* 👇 Updated to use Real Profile Image */}
+                    <div className="w-12 h-12 rounded-full overflow-hidden bg-slate-200 border-2 border-white shadow-sm shrink-0">
+                        {commuter.profileImage ? (
+                            <img src={commuter.profileImage} alt={commuter.name} className="w-full h-full object-cover" />
+                        ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-emerald-600 text-white font-bold text-xl">
+                                {commuter.name[0]}
+                            </div>
+                        )}
+                    </div>
+
+                    <div>
+                        <h4 className="font-bold text-slate-900">{commuter.name}</h4>
+                        <p className="text-xs text-slate-500 font-semibold uppercase">{commuter.institution}</p>
+                    </div>
+                    </div>
+                    <div className="text-right">
+                    <p className="text-lg font-bold text-emerald-600">{commuter.co2}</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Saved</p>
+                    </div>
+                </div>
+                ))
+            )}
           </div>
         </div>
       </section>
 
-      {/* FEATURES SECTION - Keep existing code */}
+      {/* FEATURES SECTION */}
       <section id="features" className="py-24 px-6 max-w-7xl mx-auto">
         <div className="mb-16 md:text-center max-w-3xl mx-auto">
           <h2 className="text-3xl md:text-5xl font-bold text-slate-900 mb-6">
@@ -123,7 +202,6 @@ const Landing = () => {
           </h2>
         </div>
         <div className="grid md:grid-cols-3 gap-6 auto-rows-[300px]">
-          {/* ... existing feature cards ... */}
           <div className="md:col-span-2 bg-white rounded-3xl p-8 border border-slate-100 shadow-lg hover:shadow-xl transition-all group overflow-hidden relative">
             <div className="relative z-10 h-full flex flex-col justify-between">
               <div>
@@ -169,8 +247,6 @@ const Landing = () => {
           </div>
         </div>
       </section>
-
-      
 
     </div>
   );
