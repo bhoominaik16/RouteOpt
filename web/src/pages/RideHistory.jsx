@@ -22,6 +22,12 @@ const RideHistory = () => {
 
   const [payModalData, setPayModalData] = useState(null); // Controls the Payment Modal
 
+  // 🔥 Cost Calculation Helper
+  const getDynamicCost = (distance) => {
+    const dist = parseFloat(distance || 0);
+    return Math.round(20 + dist * 10);
+  };
+
   /* 🔥 Function for Driver to save their UPI ID */
   const handleUpdateUPI = async (rideId, upiId) => {
     if (!upiId) return toast.error("Please enter a UPI ID");
@@ -43,9 +49,11 @@ const RideHistory = () => {
       const rideSnap = await getDoc(rideRef);
 
       const latestUpi = rideSnap.exists() ? rideSnap.data().driverUpi : null;
+      const fare = req.pricePerSeat || getDynamicCost(req.distance || 0);
 
       setPayModalData({
         ...req,
+        fare,
         driverUpi: latestUpi, // Use the fresh UPI from the Driver document
       });
     } catch (error) {
@@ -80,9 +88,10 @@ const RideHistory = () => {
   return (
     <div className="min-h-screen bg-slate-50 p-6 md:p-12">
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-black text-slate-900 mb-8">My Activity</h1>
+        <h1 className="text-3xl font-black text-slate-900 mb-8 tracking-tighter uppercase italic">
+          My Activity
+        </h1>
 
-        {/* TABS */}
         <div className="flex p-1 bg-white rounded-xl shadow-sm border border-slate-100 mb-8 w-fit">
           <button
             onClick={() => setActiveTab("taker")}
@@ -106,7 +115,6 @@ const RideHistory = () => {
           </button>
         </div>
 
-        {/* LIST VIEW */}
         <div className="space-y-4">
           {/* --- PASSENGER VIEW --- */}
           {activeTab === "taker" &&
@@ -138,18 +146,17 @@ const RideHistory = () => {
                     <h3 className="font-bold text-slate-900 text-lg">
                       Pickup: {req.pickupLocation}
                     </h3>
-                    <p className="text-sm text-slate-500">
+                    <p className="text-sm text-slate-500 font-bold uppercase">
                       Driver: {req.driverName || "Unknown"}
                     </p>
                   </div>
 
-                  {/* 💰 PAY BUTTON (Updated to use Sync Logic) */}
                   {req.status === "ACCEPTED" && (
                     <button
                       onClick={() => handlePassengerPay(req)}
                       className="px-6 py-3 bg-emerald-600 text-white font-bold rounded-xl shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition flex items-center gap-2"
                     >
-                      <span>💸</span> Pay ₹{req.price || 0}
+                      <span>💸</span> Pay Fare
                     </button>
                   )}
                 </div>
@@ -163,51 +170,54 @@ const RideHistory = () => {
                 You haven't posted any rides.
               </p>
             ) : (
-              postedRides.map((ride) => (
-                <div
-                  key={ride.id}
-                  className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100"
-                >
-                  <h3 className="font-bold text-slate-900">
-                    {ride.source} ➝ {ride.destination}
-                  </h3>
-                  <div className="flex gap-4 mt-2 text-sm text-slate-500">
-                    <span>📅 {ride.departureTime}</span>
-                    <span>
-                      💰 Earned: ₹
-                      {(ride.passengers?.length || 0) *
-                        (ride.pricePerSeat || 0)}
-                    </span>
-                  </div>
+              postedRides.map((ride) => {
+                const seatPrice =
+                  ride.pricePerSeat || getDynamicCost(ride.distance);
+                const totalEarned = (ride.passengers?.length || 0) * seatPrice;
+                return (
+                  <div
+                    key={ride.id}
+                    className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100"
+                  >
+                    <h3 className="font-bold text-slate-900 text-lg">
+                      {ride.source} ➝ {ride.destination}
+                    </h3>
+                    <div className="flex gap-4 mt-2 text-sm text-slate-500">
+                      <span>📅 {ride.departureTime}</span>
+                      <span className="text-emerald-600 font-bold">
+                        💰 Earned: ₹{totalEarned}
+                      </span>
+                    </div>
 
-                  {/* 🔥 DRIVER UPI INPUT FIELD */}
-                  <div className="mt-4 pt-4 border-t border-slate-50 flex items-center gap-2">
-                    <input
-                      type="text"
-                      placeholder="Enter UPI ID (e.g. name@upi)"
-                      defaultValue={ride.driverUpi || ""}
-                      id={`upi-${ride.id}`}
-                      className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-500"
-                    />
-                    <button
-                      onClick={() =>
-                        handleUpdateUPI(
-                          ride.id,
-                          document.getElementById(`upi-${ride.id}`).value
-                        )
-                      }
-                      className="bg-slate-900 text-white text-[10px] font-bold uppercase px-4 py-2 rounded-lg hover:bg-slate-800 transition"
-                    >
-                      Set UPI
-                    </button>
+                    {/* 🔥 UPI UPLOAD FIELD */}
+                    <div className="mt-4 pt-4 border-t border-slate-50 flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Enter UPI ID (e.g. name@upi)"
+                        defaultValue={ride.driverUpi || ""}
+                        id={`upi-${ride.id}`}
+                        className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                      <button
+                        onClick={() =>
+                          handleUpdateUPI(
+                            ride.id,
+                            document.getElementById(`upi-${ride.id}`).value
+                          )
+                        }
+                        className="bg-slate-900 text-white text-[10px] font-bold uppercase px-4 py-2 rounded-lg hover:bg-slate-800 transition"
+                      >
+                        Set UPI
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             ))}
         </div>
       </div>
 
-      {/* 💰 PAYMENT MODAL (QR CODE) */}
+      {/* 💰 PAYMENT MODAL */}
       {payModalData && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl p-8 max-sm w-full shadow-2xl relative">
@@ -232,14 +242,13 @@ const RideHistory = () => {
                 </span>
               </p>
 
-              {/* QR Code Container */}
               <div className="bg-white p-4 rounded-2xl border-2 border-slate-900 inline-block shadow-inner mb-6">
                 <QRCode
                   /* 🔥 Dynamic QR Generation based on Driver's specific UPI ID */
                   value={`upi://pay?pa=${
                     payModalData.driverUpi || "merchant@upi"
                   }&pn=${payModalData.driverName}&am=${
-                    payModalData.price || 0
+                    payModalData.fare || 0
                   }&cu=INR`}
                   size={180}
                   viewBox={`0 0 180 180`}
@@ -251,7 +260,7 @@ const RideHistory = () => {
                   Total Amount
                 </p>
                 <p className="text-4xl font-black text-slate-900">
-                  ₹{payModalData.price || 0}
+                  ₹{payModalData.fare || 0}
                 </p>
                 <p className="text-[10px] text-slate-400 mt-2 truncate italic">
                   UPI: {payModalData.driverUpi || "Not set by driver"}
@@ -263,7 +272,7 @@ const RideHistory = () => {
                   setPayModalData(null);
                   alert("Payment marked as done! (Demo)");
                 }}
-                className="w-full py-3.5 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition"
+                className="w-full py-3.5 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition uppercase tracking-widest text-[10px]"
               >
                 I have Paid
               </button>

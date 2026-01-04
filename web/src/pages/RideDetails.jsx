@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { doc, getDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, addDoc, collection, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 import L from 'leaflet';
@@ -83,9 +83,28 @@ const RideDetails = () => {
     if (ride.driverId === user.uid) return toast.error("You cannot request your own ride!");
 
     setRequesting(true);
-    const toastId = toast.loading("Sending request...");
+    const toastId = toast.loading("Checking availability...");
 
     try {
+      // 🛑 STEP 1: DUPLICATE CHECK
+      // Check if THIS user has already requested THIS ride
+      const q = query(
+        collection(db, "ride_requests"),
+        where("rideId", "==", id),
+        where("takerId", "==", user.uid)
+      );
+
+      const existingRequests = await getDocs(q);
+
+      if (!existingRequests.empty) {
+        toast.error("You have already requested this ride!", { id: toastId });
+        setRequesting(false);
+        return; // <--- STOP HERE
+      }
+
+      // 🟢 STEP 2: PROCEED IF NO DUPLICATE FOUND
+      toast.loading("Sending request...", { id: toastId });
+
       const finalPickupName = passedPickup || ride.source;
       const finalPickupCoords = customPickupCoords || ride.sourceCoords;
 
@@ -97,7 +116,7 @@ const RideDetails = () => {
         takerName: user.name || "Unknown User",
         takerImage: user.profileImage || "",
         pickupLocation: finalPickupName, 
-        pickupCoords: finalPickupCoords || null, // Ensure valid value
+        pickupCoords: finalPickupCoords || null, 
         price: ride.pricePerSeat || 0,
         status: "PENDING", 
         timestamp: serverTimestamp()
@@ -128,7 +147,7 @@ const RideDetails = () => {
       .map(p => [p.lat, p.lng]);
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 flex justify-center items-center">
+    <div className="max-h-[90vh] bg-slate-50 p-6 flex justify-center items-center">
       <div className="bg-white rounded-3xl shadow-xl overflow-hidden max-w-5xl w-full grid grid-cols-1 lg:grid-cols-2">
         
         {/* LEFT: INFO */}
