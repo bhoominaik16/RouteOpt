@@ -1,65 +1,48 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
+import React, { useEffect, useState } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { doc, getDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase';
+import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import toast from 'react-hot-toast';
+import axios from 'axios'; // Import Axios for geocoding
 
-// 🔥 FIREBASE IMPORTS
-import { db } from '../firebase';
-import { 
-    doc, getDoc, collection, addDoc, 
-    serverTimestamp, query, where, getDocs 
-} from 'firebase/firestore';
-
-// --- LEAFLET ICONS ---
-const redIcon = new L.Icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41]
+// Fix Icons
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
-
-// Helper to center map on route
-function MapUpdater({ bounds }) {
-  const map = useMap();
-  useEffect(() => {
-    if (bounds && bounds.length > 0) {
-      map.fitBounds(bounds, { padding: [50, 50] });
-    }
-  }, [bounds, map]);
-  return null;
-}
 
 const RideDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation(); // Hook to access passed state (Mulund)
   
+  const [user] = useState(() => JSON.parse(localStorage.getItem('user')));
   const [ride, setRide] = useState(null);
   const [loading, setLoading] = useState(true);
   const [requesting, setRequesting] = useState(false);
-  const [hasRequested, setHasRequested] = useState(false);
-  const [requestStatus, setRequestStatus] = useState(null); // 'PENDING', 'ACCEPTED', 'REJECTED'
+  
+  // 📍 STATE FOR PICKUP LOGIC
+  // If user searched "Mulund", use that. Otherwise default to Ride Source.
+  const passedPickup = location.state?.userPickup || "";
+  const [customPickupCoords, setCustomPickupCoords] = useState(null);
 
-  // Get Current User
-  const user = JSON.parse(localStorage.getItem('user'));
-
-  // 1. FETCH RIDE DETAILS
   useEffect(() => {
     const fetchRide = async () => {
       try {
         const docRef = doc(db, "rides", id);
         const docSnap = await getDoc(docRef);
-        
         if (docSnap.exists()) {
-          setRide({ id: docSnap.id, ...docSnap.data() });
+          setRide(docSnap.data());
         } else {
           toast.error("Ride not found");
-          navigate('/ride-taker');
+          navigate('/ride-selection');
         }
       } catch (error) {
-        console.error("Error fetching ride:", error);
+        console.error(error);
       } finally {
         setLoading(false);
       }
@@ -67,33 +50,23 @@ const RideDetails = () => {
     fetchRide();
   }, [id, navigate]);
 
-  // 2. CHECK IF ALREADY REQUESTED
+  // 🌍 GEOCODE THE PASSENGER'S PICKUP (Mulund -> Lat/Lng)
   useEffect(() => {
-    const checkRequestStatus = async () => {
-        if (!user || !id) return;
-
-        try {
-            const q = query(
-                collection(db, "ride_requests"), 
-                where("rideId", "==", id),
-                where("takerId", "==", user.uid)
-            );
-            const snapshot = await getDocs(q);
-            
-            if (!snapshot.empty) {
-                setHasRequested(true);
-                // Get the status of the first request found
-                setRequestStatus(snapshot.docs[0].data().status);
-            }
-        } catch (error) {
-            console.error("Error checking request status:", error);
-        }
-    };
-    checkRequestStatus();
-  }, [user, id]);
-
-  // 3. HANDLE REQUEST SEAT
-  // Inside src/pages/RideDetails.jsx
+      const resolvePickup = async () => {
+          if (passedPickup) {
+              try {
+                  const res = await axios.get(`https://photon.komoot.io/api/?q=${encodeURIComponent(passedPickup)}&limit=1&lat=19.07&lon=72.87`);
+                  if (res.data.features.length > 0) {
+                      const [lng, lat] = res.data.features[0].geometry.coordinates;
+                      setCustomPickupCoords({ lat, lng });
+                  }
+              } catch (e) {
+                  console.error("Could not geocode pickup", e);
+              }
+          }
+      };
+      if(passedPickup && !customPickupCoords) resolvePickup();
+  }, [passedPickup]);
 
   const handleRequestSeat = async () => {
     if (!user) {
@@ -102,199 +75,133 @@ const RideDetails = () => {
       return;
     }
     
-    if (ride.seatsAvailable <= 0) {
-      toast.error("Ride is full!");
-      return;
-    }
-    if (ride.driverId === user.uid) {
-        toast.error("You cannot request your own ride!");
-        return;
-    }
+    if (ride.seatsAvailable <= 0) return toast.error("Ride is full!");
+    if (ride.driverId === user.uid) return toast.error("You cannot request your own ride!");
 
     setRequesting(true);
-    const toastId = toast.loading("Sending request to driver...");
+    const toastId = toast.loading("Sending request...");
 
     try {
-      // 👇 THE FIX: We added 'pickupCoords' here
+      // 🧠 LOGIC: Use Custom Pickup if available, else Ride Source
+      const finalPickupName = passedPickup || ride.source;
+      const finalPickupCoords = customPickupCoords || ride.sourceCoords;
+
       await addDoc(collection(db, "ride_requests"), {
         rideId: id,
+        
+        // 🟢 FIX 1: Driver Info (So it's not "Unknown")
         driverId: ride.driverId,
+        driverName: ride.driverName || "Unknown Driver", 
+        
         takerId: user.uid,
-        takerName: user.name || "Unknown",
+        takerName: user.name || "Unknown User",
         takerImage: user.profileImage || "",
         
-        // Ensure we send BOTH name and coordinates
-        pickupLocation: ride.source, 
-        pickupCoords: ride.sourceCoords || null, 
+        // 🟢 FIX 2: Correct Pickup Location (Mulund, not Thane)
+        pickupLocation: finalPickupName, 
+        pickupCoords: finalPickupCoords, 
         
+        price: ride.pricePerSeat || 0,
         status: "PENDING", 
         timestamp: serverTimestamp()
       });
 
-      toast.success("Request Sent! Waiting for approval.", { id: toastId });
-      setHasRequested(true);
-      setRequestStatus("PENDING");
+      toast.success("Request Sent! Driver notified.", { id: toastId });
+      navigate('/history'); // Send them to history to see status
 
     } catch (error) {
       console.error("Request failed:", error);
-      toast.error("Request failed. Try again.", { id: toastId });
+      toast.error("Request failed.", { id: toastId });
     } finally {
       setRequesting(false);
     }
   };
 
-  if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="text-center">
-            <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-slate-500 font-medium">Loading Route...</p>
-        </div>
-    </div>
-  );
-
+  if (loading) return <div className="p-10 text-center text-slate-400">Loading ride details...</div>;
   if (!ride) return null;
 
-  // Reconstruct Polyline for Map
-  const polylinePositions = ride.routeGeometry?.map(p => [p.lat, p.lng]) || [];
-  const mapCenter = ride.sourceCoords || [20.5937, 78.9629];
-
-  // Helper to determine button style based on status
-  const getButtonText = () => {
-      if (ride.seatsAvailable === 0) return "Ride Full";
-      if (hasRequested) {
-          if (requestStatus === 'ACCEPTED') return "Ride Accepted! ✅";
-          if (requestStatus === 'REJECTED') return "Request Declined ❌";
-          return "Request Pending ⏳";
-      }
-      if (requesting) return "Sending...";
-      return "Request Seat";
-  };
-
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
-      
-      {/* HEADER SECTION */}
-      <div className="bg-slate-900 text-white pt-10 pb-24 px-6">
-        <div className="max-w-4xl mx-auto">
-            <button onClick={() => navigate(-1)} className="text-slate-400 hover:text-white mb-4 flex items-center gap-2 transition-colors">
-                ← Back to Results
+    <div className="min-h-screen bg-slate-50 p-6 flex justify-center items-center">
+      <div className="bg-white rounded-3xl shadow-xl overflow-hidden max-w-5xl w-full grid grid-cols-1 lg:grid-cols-2">
+        
+        {/* LEFT: INFO */}
+        <div className="p-8 md:p-12 flex flex-col justify-between">
+          <div>
+            <button onClick={() => navigate(-1)} className="text-slate-400 font-bold text-sm mb-6 hover:text-slate-600 transition">
+              ← Back
             </button>
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div>
-                    <h1 className="text-3xl font-bold flex items-center gap-3">
-                        {ride.source} <span className="text-slate-500">to</span> {ride.destination}
-                    </h1>
-                    <p className="text-emerald-400 font-mono mt-2 flex items-center gap-2">
-                        ⏱ Leaving {ride.departureTime === 'NOW' ? 'NOW' : new Date(ride.departureTime).toLocaleString()}
+            
+            <div className="flex items-center gap-4 mb-6">
+               <div className="w-16 h-16 rounded-full bg-slate-100 overflow-hidden border-2 border-emerald-100">
+                  {ride.driverImage ? <img src={ride.driverImage} className="w-full h-full object-cover"/> : <span className="w-full h-full flex items-center justify-center text-2xl">👤</span>}
+               </div>
+               <div>
+                  <h1 className="text-2xl font-black text-slate-900">{ride.driverName}</h1>
+                  <p className="text-sm text-slate-500 font-medium">Verified Driver</p>
+               </div>
+            </div>
+
+            <div className="space-y-6 relative">
+               <div className="absolute left-[7px] top-2 bottom-4 w-0.5 bg-slate-100" />
+               
+               <div className="relative pl-8">
+                  <div className="absolute left-0 top-1 w-4 h-4 rounded-full bg-emerald-500 border-4 border-white shadow-sm" />
+                  <p className="text-xs font-bold text-slate-400 uppercase mb-1">From</p>
+                  <h3 className="text-xl font-bold text-slate-900">{ride.source}</h3>
+               </div>
+
+               <div className="relative pl-8">
+                  <div className="absolute left-0 top-1 w-4 h-4 rounded-full bg-slate-900 border-4 border-white shadow-sm" />
+                  <p className="text-xs font-bold text-slate-400 uppercase mb-1">To</p>
+                  <h3 className="text-xl font-bold text-slate-900">{ride.destination}</h3>
+               </div>
+            </div>
+
+            {/* 📍 CONFIRMATION OF PICKUP */}
+            {passedPickup && (
+                <div className="mt-8 bg-amber-50 border border-amber-200 p-4 rounded-xl">
+                    <p className="text-xs font-bold text-amber-700 uppercase mb-1">Your Pickup Point</p>
+                    <p className="font-bold text-slate-900 flex items-center gap-2">
+                       📍 {passedPickup}
                     </p>
+                    <p className="text-[10px] text-slate-500 mt-1">This location will be sent to the driver.</p>
                 </div>
-                <div className="bg-slate-800 px-6 py-3 rounded-2xl border border-slate-700 text-center shadow-lg">
-                    <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Seats Left</p>
-                    <p className="text-3xl font-black text-white">{ride.seatsAvailable}</p>
+            )}
+          </div>
+
+          <div className="mt-8 space-y-4">
+             <div className="grid grid-cols-2 gap-4">
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-center">
+                   <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Date & Time</p>
+                   <p className="text-sm font-bold text-slate-900">{new Date(ride.departureTime).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</p>
                 </div>
-            </div>
+                <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 text-center">
+                   <p className="text-xs text-emerald-600 font-bold uppercase tracking-wider mb-1">Price / Seat</p>
+                   <p className="text-xl font-black text-emerald-700">₹{ride.pricePerSeat}</p>
+                </div>
+             </div>
+
+             <button 
+               onClick={handleRequestSeat}
+               disabled={requesting}
+               className="w-full py-4 bg-slate-900 text-white font-bold rounded-2xl shadow-xl hover:bg-slate-800 transition active:scale-95 disabled:opacity-50"
+             >
+               {requesting ? "Sending Request..." : "Request Seat"}
+             </button>
+          </div>
         </div>
-      </div>
 
-      {/* CONTENT GRID */}
-      <div className="max-w-4xl mx-auto px-6 -mt-16 relative z-10">
-        <div className="grid md:grid-cols-3 gap-6">
-
-            {/* LEFT COLUMN: Driver Profile & Action */}
-            <div className="md:col-span-1 space-y-6">
-                
-                {/* Driver Card */}
-                <div className="bg-white p-6 rounded-3xl shadow-xl border border-slate-100">
-                    <div className="flex flex-col items-center text-center">
-                        <div className="w-24 h-24 bg-slate-100 rounded-full mb-4 overflow-hidden border-4 border-emerald-50 shadow-inner">
-                            {ride.driverImage ? (
-                                <img src={ride.driverImage} alt="Driver" className="w-full h-full object-cover" />
-                            ) : (
-                                <span className="text-4xl leading-[96px]">👤</span>
-                            )}
-                        </div>
-                        <h2 className="text-xl font-bold text-slate-900">{ride.driverName}</h2>
-                        
-                        <div className="flex flex-wrap justify-center gap-2 mt-2">
-                            {ride.sameInstitution && (
-                                <span className="bg-blue-50 text-blue-600 border border-blue-100 text-[10px] px-2 py-1 rounded-full font-bold uppercase tracking-wide">
-                                    Same Org
-                                </span>
-                            )}
-                            {ride.genderPreference && (
-                                <span className="bg-pink-50 text-pink-600 border border-pink-100 text-[10px] px-2 py-1 rounded-full font-bold uppercase tracking-wide">
-                                    Same Gender
-                                </span>
-                            )}
-                        </div>
-                        
-                        <div className="w-full h-px bg-slate-100 my-4" />
-                        
-                        <div className="grid grid-cols-2 w-full gap-4 text-center">
-                            <div>
-                                <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Distance</p>
-                                <p className="font-bold text-slate-700 text-lg">{ride.distance} km</p>
-                            </div>
-                            <div>
-                                <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Duration</p>
-                                <p className="font-bold text-slate-700 text-lg">{ride.duration} min</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* ACTION BUTTON */}
-                <button 
-                    onClick={handleRequestSeat}
-                    disabled={requesting || ride.seatsAvailable === 0 || hasRequested}
-                    className={`w-full py-4 rounded-2xl font-bold text-lg shadow-xl transition-all active:scale-95 border-2 ${
-                        hasRequested
-                            ? requestStatus === 'ACCEPTED' 
-                                ? 'bg-emerald-100 text-emerald-700 border-emerald-200 cursor-default'
-                                : requestStatus === 'REJECTED'
-                                    ? 'bg-red-50 text-red-500 border-red-100 cursor-default'
-                                    : 'bg-slate-100 text-slate-500 border-slate-200 cursor-default'
-                            : ride.seatsAvailable === 0 
-                                ? 'bg-slate-300 text-slate-500 border-transparent cursor-not-allowed' 
-                                : 'bg-emerald-600 text-white border-transparent hover:bg-emerald-700 hover:shadow-emerald-200'
-                    }`}
-                >
-                    {getButtonText()}
-                </button>
-            </div>
-
-            {/* RIGHT COLUMN: Map */}
-            <div className="md:col-span-2 h-[500px] bg-white rounded-3xl shadow-xl border-4 border-white overflow-hidden relative z-0">
-                <MapContainer center={mapCenter} zoom={13} style={{ height: '100%', width: '100%' }}>
-                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                    
-                    {/* Auto-zoom to fit the route */}
-                    <MapUpdater bounds={polylinePositions} />
-
-                    {ride.sourceCoords && (
-                        <Marker position={ride.sourceCoords} icon={redIcon}>
-                            <Popup>Pickup: {ride.source}</Popup>
-                        </Marker>
-                    )}
-                    {ride.destCoords && (
-                        <Marker position={ride.destCoords} icon={redIcon}>
-                            <Popup>Dropoff: {ride.destination}</Popup>
-                        </Marker>
-                    )}
-                    
-                    {/* Draw the Route Line */}
-                    {polylinePositions.length > 0 && (
-                        <Polyline positions={polylinePositions} color="#EF4444" weight={6} opacity={0.8} />
-                    )}
-                </MapContainer>
-                
-                {/* Overlay Badge */}
-                <div className="absolute top-4 right-4 bg-white/90 backdrop-blur px-4 py-2 rounded-xl shadow-lg z-[1000] border border-slate-100">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">Route View</p>
-                    <p className="text-sm font-black text-slate-800">Live Geometry</p>
-                </div>
-            </div>
-
+        {/* RIGHT: MAP */}
+        <div className="bg-slate-200 relative min-h-[300px]">
+           <MapContainer center={ride.sourceCoords ? [ride.sourceCoords.lat, ride.sourceCoords.lng] : [19, 72]} zoom={11} style={{ height: '100%', width: '100%' }}>
+              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+              {ride.routeGeometry && <Polyline positions={ride.routeGeometry.map(p => [p.lat, p.lng])} color="#10b981" weight={5} />}
+              
+              {/* Start/End Markers */}
+              {ride.sourceCoords && <Marker position={[ride.sourceCoords.lat, ride.sourceCoords.lng]}><Popup>Start: {ride.source}</Popup></Marker>}
+              {/* Passenger Pickup Marker (If customized) */}
+              {customPickupCoords && <Marker position={[customPickupCoords.lat, customPickupCoords.lng]}><Popup>Your Pickup: {passedPickup}</Popup></Marker>}
+           </MapContainer>
         </div>
       </div>
     </div>

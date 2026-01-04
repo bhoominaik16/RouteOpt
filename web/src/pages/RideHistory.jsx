@@ -1,165 +1,160 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { db } from '../firebase';
-import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import React, { useEffect, useState } from 'react';
+import { db } from '../firebase'; 
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import QRCode from "react-qr-code"; // 📦 QR Code Library
 
 const RideHistory = () => {
-  const navigate = useNavigate();
   const [user] = useState(() => JSON.parse(localStorage.getItem('user')));
+  const [activeTab, setActiveTab] = useState('taker');
   
-  const [myRequests, setMyRequests] = useState([]);
-  const [myDrives, setMyDrives] = useState([]); // Stores rides where I am the driver
-  const [activeTab, setActiveTab] = useState('taker'); // 'taker' or 'driver'
-  const [loading, setLoading] = useState(true);
+  const [requests, setRequests] = useState([]); // Rides I requested (Passenger)
+  const [postedRides, setPostedRides] = useState([]); // Rides I posted (Driver)
+  
+  const [payModalData, setPayModalData] = useState(null); // Controls the Payment Modal
 
+  // 1. Fetch Requests (Passenger View)
   useEffect(() => {
     if (!user) return;
-    setLoading(true);
-
-    // 1. Fetch Requests I Sent (AS PASSENGER)
-    const qRequests = query(
-      collection(db, "ride_requests"),
-      where("takerId", "==", user.uid)
-    );
-
-    // 2. Fetch Rides I Posted (AS DRIVER)
-    const qDrives = query(
-      collection(db, "rides"),
-      where("driverId", "==", user.uid),
-      orderBy("createdAt", "desc")
-    );
-
-    const unsubRequests = onSnapshot(qRequests, (snapshot) => {
-      const reqs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      reqs.sort((a, b) => b.timestamp?.seconds - a.timestamp?.seconds);
-      setMyRequests(reqs);
+    const q = query(collection(db, "ride_requests"), where("takerId", "==", user.uid));
+    const unsub = onSnapshot(q, (snap) => {
+        setRequests(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
-
-    const unsubDrives = onSnapshot(qDrives, (snapshot) => {
-      const drives = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setMyDrives(drives);
-      setLoading(false);
-    });
-
-    return () => {
-      unsubRequests();
-      unsubDrives();
-    };
+    return () => unsub();
   }, [user]);
 
-  if (!user) return <div className="p-10 text-center">Please log in.</div>;
+  // 2. Fetch Posted Rides (Driver View)
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, "rides"), where("driverId", "==", user.uid));
+    const unsub = onSnapshot(q, (snap) => {
+        setPostedRides(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsub();
+  }, [user]);
 
   return (
-    <div className="min-h-screen bg-slate-50 py-12 px-6">
+    <div className="min-h-screen bg-slate-50 p-6 md:p-12">
       <div className="max-w-4xl mx-auto">
         <h1 className="text-3xl font-black text-slate-900 mb-8">My Activity</h1>
 
-        {/* Tabs */}
-        <div className="flex gap-4 mb-6 border-b border-slate-200 pb-1">
+        {/* TABS */}
+        <div className="flex p-1 bg-white rounded-xl shadow-sm border border-slate-100 mb-8 w-fit">
           <button 
             onClick={() => setActiveTab('taker')}
-            className={`pb-3 px-4 font-bold text-sm transition-all ${activeTab === 'taker' ? 'text-emerald-600 border-b-4 border-emerald-500' : 'text-slate-400 hover:text-slate-600'}`}
+            className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'taker' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
           >
-            Rides I'm Taking
+            Passenger
           </button>
           <button 
-            onClick={() => setActiveTab('driver')}
-            className={`pb-3 px-4 font-bold text-sm transition-all ${activeTab === 'driver' ? 'text-emerald-600 border-b-4 border-emerald-500' : 'text-slate-400 hover:text-slate-600'}`}
+            onClick={() => setActiveTab('giver')}
+            className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'giver' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
           >
-            Rides I'm Driving
+            Driver
           </button>
         </div>
 
-        <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden min-h-[300px]">
+        {/* LIST VIEW */}
+        <div className="space-y-4">
           
-          {/* --- TAB 1: REQUESTS (PASSENGER) --- */}
+          {/* --- PASSENGER VIEW --- */}
           {activeTab === 'taker' && (
-            <div className="divide-y divide-slate-50">
-              {myRequests.length === 0 ? (
-                <div className="p-12 text-center">
-                  <div className="text-4xl mb-3">🙋‍♂️</div>
-                  <h3 className="text-slate-900 font-bold">No requests sent</h3>
-                  <button onClick={() => navigate('/ride-taker')} className="text-emerald-600 font-bold hover:underline mt-2">Find a Ride</button>
-                </div>
-              ) : (
-                myRequests.map((req) => (
-                  <div key={req.id} className="p-6 flex flex-col md:flex-row justify-between items-center gap-4 hover:bg-slate-50 transition">
-                    <div className="flex items-center gap-4 w-full md:w-auto">
-                      <div className={`w-12 h-12 rounded-full flex items-center justify-center text-xl shrink-0 ${
-                        req.status === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-600' :
-                        req.status === 'REJECTED' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'
-                      }`}>
-                        {req.status === 'ACCEPTED' ? '✓' : req.status === 'REJECTED' ? '✕' : '⏳'}
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-slate-900">Request for {req.pickupLocation}</h3>
-                        <p className="text-xs text-slate-500">Sent on {req.timestamp?.toDate().toLocaleDateString()}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                       <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${
-                         req.status === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-700' :
-                         req.status === 'REJECTED' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'
-                       }`}>{req.status}</span>
-                       
-                       {req.status === 'ACCEPTED' && (
-                         <button onClick={() => navigate(`/ride-details/${req.rideId}`)} className="text-xs font-bold text-slate-900 bg-slate-100 px-3 py-2 rounded-lg hover:bg-slate-200">
-                           View Ride
-                         </button>
-                       )}
-                    </div>
+            requests.length === 0 ? <p className="text-slate-400 italic">No ride requests found.</p> :
+            requests.map((req) => (
+              <div key={req.id} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
+                <div>
+                  <div className="flex items-center gap-3 mb-2">
+                     <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${
+                        req.status === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-700' :
+                        req.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
+                        'bg-amber-100 text-amber-700'
+                     }`}>
+                        {req.status}
+                     </span>
+                     <span className="text-xs text-slate-400 font-medium">
+                        {req.timestamp?.toDate().toLocaleDateString()}
+                     </span>
                   </div>
-                ))
-              )}
-            </div>
+                  <h3 className="font-bold text-slate-900 text-lg">Pickup: {req.pickupLocation}</h3>
+                  <p className="text-sm text-slate-500">Driver: {req.driverName || 'Unknown'}</p>
+                </div>
+
+                {/* 💰 PAY BUTTON (Only if Accepted) */}
+                {req.status === 'ACCEPTED' && (
+                    <button 
+                        onClick={() => setPayModalData(req)}
+                        className="px-6 py-3 bg-emerald-600 text-white font-bold rounded-xl shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition flex items-center gap-2"
+                    >
+                        <span>💸</span> Pay ₹{req.price || 0}
+                    </button>
+                )}
+              </div>
+            ))
           )}
 
-          {/* --- TAB 2: PUBLISHED RIDES (DRIVER) --- */}
-          {activeTab === 'driver' && (
-            <div className="divide-y divide-slate-50">
-              {myDrives.length === 0 ? (
-                <div className="p-12 text-center">
-                  <div className="text-4xl mb-3">🚗</div>
-                  <h3 className="text-slate-900 font-bold">You haven't posted any rides</h3>
-                  <button onClick={() => navigate('/ride-giver')} className="text-emerald-600 font-bold hover:underline mt-2">Post a Ride</button>
+          {/* --- DRIVER VIEW --- */}
+          {activeTab === 'giver' && (
+             postedRides.length === 0 ? <p className="text-slate-400 italic">You haven't posted any rides.</p> :
+             postedRides.map((ride) => (
+                <div key={ride.id} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                   <h3 className="font-bold text-slate-900">{ride.source} ➝ {ride.destination}</h3>
+                   <div className="flex gap-4 mt-2 text-sm text-slate-500">
+                      <span>📅 {ride.departureTime}</span>
+                      <span>💰 Earned: ₹{(ride.passengers?.length || 0) * (ride.pricePerSeat || 0)}</span>
+                   </div>
                 </div>
-              ) : (
-                myDrives.map((ride) => (
-                  <div key={ride.id} className="p-6 flex flex-col md:flex-row justify-between items-center gap-4 hover:bg-slate-50 transition">
-                    <div className="flex items-center gap-4 w-full md:w-auto">
-                      <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xl shrink-0">
-                        📍
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-slate-900">{ride.source} → {ride.destination}</h3>
-                        <p className="text-xs text-slate-500">
-                           {ride.departureTime === 'NOW' ? 'Leaving Now' : new Date(ride.departureTime).toLocaleString()} • {ride.distance} km
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
-                       <div className="text-right mr-4">
-                          <p className="text-xs font-bold text-slate-400 uppercase">Seats</p>
-                          <p className="font-black text-slate-800">{ride.seatsAvailable} Left</p>
-                       </div>
-                       
-                       {/* Link to Dashboard to manage requests */}
-                       <button 
-                         onClick={() => navigate('/ride-giver-dashboard')}
-                         className="px-4 py-2 bg-slate-900 text-white text-xs font-bold rounded-xl hover:bg-slate-800 transition shadow-lg"
-                       >
-                          Manage Requests
-                       </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+             ))
           )}
-
         </div>
       </div>
+
+      {/* 💰 PAYMENT MODAL (QR CODE) */}
+      {payModalData && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl relative">
+                <button 
+                    onClick={() => setPayModalData(null)}
+                    className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
+                >
+                    ✕
+                </button>
+
+                <div className="text-center">
+                    <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center text-3xl mx-auto mb-4">
+                        💸
+                    </div>
+                    <h3 className="text-xl font-black text-slate-900 mb-1">Payment</h3>
+                    <p className="text-slate-500 text-sm mb-6">Scan with any UPI App (GPay/Paytm)</p>
+                    
+                    {/* QR Code Container */}
+                    <div className="bg-white p-4 rounded-2xl border-2 border-slate-900 inline-block shadow-inner mb-6">
+                        <QRCode 
+                            // Standard UPI Link Format
+                            value={`upi://pay?pa=driver@upi&pn=RouteOptDriver&am=${payModalData.price || 0}&cu=INR`}
+                            size={180}
+                            viewBox={`0 0 180 180`}
+                        />
+                    </div>
+
+                    <div className="bg-slate-50 p-4 rounded-xl mb-4 border border-slate-100">
+                        <p className="text-xs text-slate-400 uppercase font-bold tracking-wider">Total Amount</p>
+                        <p className="text-4xl font-black text-slate-900">₹{payModalData.price || 0}</p>
+                    </div>
+
+                    <button 
+                        onClick={() => {
+                            setPayModalData(null);
+                            // In a real app, you would verify payment API status here
+                            alert("Payment marked as done! (Demo)");
+                        }}
+                        className="w-full py-3.5 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition"
+                    >
+                        I have Paid
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
     </div>
   );
 };
