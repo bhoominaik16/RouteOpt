@@ -184,7 +184,7 @@ const Navbar = () => {
               </div>
             </>
           ) : (
-            <Link to="/auth" className="bg-slate-900 text-white px-6 py-2.5 rounded-full font-semibold shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300">
+            <Link to="/auth" className="bg-emerald-500 text-white px-6 py-2.5 rounded-full font-semibold shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300">
               Get Started
             </Link>
           )}
