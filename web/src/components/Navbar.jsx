@@ -1,22 +1,22 @@
-import React, { useState, useRef, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { onAuthStateChanged, signOut } from "firebase/auth";
-import { auth, db } from "../firebase";
-import { doc, getDoc } from "firebase/firestore";
-import toast from "react-hot-toast";
+import React, { useState, useRef, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { auth, db } from '../firebase'; 
+import { doc, getDoc } from 'firebase/firestore';
+import toast from 'react-hot-toast';
 
 const Navbar = () => {
   const navigate = useNavigate();
   const [showDropdown, setShowDropdown] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // 🔥 State for mobile toggle
   const [user, setUser] = useState(null);
-
-  const [localData, setLocalData] = useState(
-    JSON.parse(localStorage.getItem("user"))
-  );
-
+  
+  // We need a local state for the image/name because Profile saves to localStorage
+  const [localData, setLocalData] = useState(JSON.parse(localStorage.getItem('user')));
+  
   const dropdownRef = useRef(null);
 
+  // 1. Listen for Firebase Auth (Login Status)
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
@@ -24,31 +24,34 @@ const Navbar = () => {
     return () => unsubscribe();
   }, []);
 
+  // 2. Listen for Profile Updates (The Sync Fix)
   useEffect(() => {
     const syncLocalData = () => {
-      const savedUser = JSON.parse(localStorage.getItem("user"));
+      const savedUser = JSON.parse(localStorage.getItem('user'));
       if (savedUser) {
         setLocalData(savedUser);
       }
     };
 
-    window.addEventListener("userUpdated", syncLocalData);
-    window.addEventListener("storage", syncLocalData);
+    // Listen for the custom event we added in Profile.js
+    window.addEventListener('userUpdated', syncLocalData);
+    // Also listen for storage events (multi-tab support)
+    window.addEventListener('storage', syncLocalData);
 
     return () => {
-      window.removeEventListener("userUpdated", syncLocalData);
-      window.removeEventListener("storage", syncLocalData);
+      window.removeEventListener('userUpdated', syncLocalData);
+      window.removeEventListener('storage', syncLocalData);
     };
   }, []);
 
   const handleLogout = async () => {
     try {
       await signOut(auth);
-      localStorage.removeItem("user");
-      setLocalData(null);
-      window.dispatchEvent(new Event("userUpdated"));
-
-      toast.success("Logged out successfully");
+      localStorage.removeItem('user'); 
+      setLocalData(null); // Clear local state immediately
+      window.dispatchEvent(new Event("userUpdated")); // Tell components to clear
+      
+      toast.success('Logged out successfully');
       setShowDropdown(false);
       setIsMobileMenuOpen(false);
       navigate("/");
@@ -58,14 +61,15 @@ const Navbar = () => {
     }
   };
 
+  // Close dropdown on outside click
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setShowDropdown(false);
       }
     };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   return (
@@ -74,14 +78,14 @@ const Navbar = () => {
       <div className="max-w-7xl mx-auto flex items-center justify-between">
         {/* LOGO */}
         <Link to="/" className="flex items-center gap-3 group">
-          <div className="bg-white/10 p-2 rounded-lg group-hover:bg-emerald-500/20 transition-colors">
-            <img
-              src="/Logo.png"
-              alt="RouteOpt Logo"
-              className="w-8 h-8 object-contain brightness-0 invert"
+          <div className="bg-slate-100/10 p-2 rounded-xl group-hover:bg-emerald-600/20 transition-colors">
+            <img 
+              src="/Logo.png" 
+              alt="RouteOpt Logo" 
+              className="w-8 h-8 object-contain"
             />
           </div>
-          <span className="text-xl font-bold text-white tracking-tight uppercase italic">
+          <span className="text-2xl font-bold text-slate-100 tracking-tight">
             RouteOpt
           </span>
         </Link>
@@ -98,21 +102,21 @@ const Navbar = () => {
               </Link>
 
               <div className="relative" ref={dropdownRef}>
-                <button
+                <button 
                   onClick={() => setShowDropdown(!showDropdown)}
-                  className="flex items-center gap-2 p-1 hover:bg-white/10 rounded-full transition outline-none"
+                  className="flex items-center gap-2 p-1 hover:bg-slate-100 rounded-full transition outline-none"
                 >
                   <div className="w-9 h-9 rounded-full flex items-center justify-center text-slate-900 font-bold uppercase border-2 border-emerald-400 overflow-hidden bg-emerald-50">
                     {localData?.profileImage ? (
-                      <img
-                        src={localData.profileImage}
-                        alt="User"
-                        className="w-full h-full object-cover"
-                      />
+                       <img 
+                         src={localData.profileImage} 
+                         alt="User" 
+                         className="w-full h-full object-cover" 
+                       />
                     ) : (
-                      <span className="text-xs">
-                        {localData?.name ? localData.name[0] : user.email[0]}
-                      </span>
+                       <span>
+                         {localData?.name ? localData.name[0] : user.email[0]}
+                       </span>
                     )}
                   </div>
                   <svg
@@ -133,14 +137,13 @@ const Navbar = () => {
                 </button>
 
                 {showDropdown && (
-                  <div className="absolute right-0 mt-3 w-56 bg-white border border-slate-200 rounded-xl shadow-2xl py-2 animate-in fade-in zoom-in-95 duration-200 origin-top-right">
-                    <div className="px-4 py-3 border-b border-slate-100 mb-1">
-                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">
-                        User Account
-                      </p>
-                      <p className="text-sm font-bold text-slate-900 truncate">
+                  <div className="absolute right-0 mt-2 w-56 bg-white border border-slate-100 rounded-2xl shadow-xl py-2 animate-in fade-in zoom-in-95 duration-200 origin-top-right">
+                    <div className="px-4 py-3 border-b border-slate-50 mb-1">
+                      <p className="text-xs text-slate-400 font-medium uppercase tracking-wider mb-1">Signed in as</p>
+                      <p className="text-sm font-bold text-slate-800 truncate">
                         {localData?.name || "User"}
                       </p>
+                      <p className="text-xs text-slate-500 truncate">{user.email}</p>
                     </div>
                     <ul>
                       <li>
@@ -167,10 +170,10 @@ const Navbar = () => {
                           Rides History
                         </Link>
                       </li>
-                      <li className="border-t border-slate-100 mt-1">
-                        <button
+                      <li className="border-t border-slate-50 mt-1">
+                        <button 
                           onClick={handleLogout}
-                          className="w-full text-left flex items-center gap-2 px-4 py-2.5 text-sm text-red-600 font-bold hover:bg-red-50 transition"
+                          className="w-full text-left flex items-center gap-2 px-4 py-2.5 text-sm text-red-500 font-semibold hover:bg-red-50 transition"
                         >
                           Logout
                         </button>
@@ -181,10 +184,7 @@ const Navbar = () => {
               </div>
             </>
           ) : (
-            <Link
-              to="/auth"
-              className="bg-emerald-500 text-slate-900 px-8 py-2.5 rounded-lg font-black uppercase tracking-widest shadow-xl hover:bg-emerald-400 transition-all text-xs"
-            >
+            <Link to="/auth" className="bg-slate-900 text-white px-6 py-2.5 rounded-full font-semibold shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300">
               Get Started
             </Link>
           )}
