@@ -147,7 +147,7 @@ const RideDetails = () => {
       .map(p => [p.lat, p.lng]);
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 flex justify-center items-center">
+    <div className="max-h-[90vh] bg-slate-50 p-6 flex justify-center items-center">
       <div className="bg-white rounded-3xl shadow-xl overflow-hidden max-w-5xl w-full grid grid-cols-1 lg:grid-cols-2">
         
         {/* LEFT: INFO */}
