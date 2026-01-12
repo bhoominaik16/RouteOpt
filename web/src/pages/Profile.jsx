@@ -12,18 +12,18 @@ import {
   Cell,
 } from "recharts";
 
+import EcoLoopCoach from "../components/EcoLoopCoach";
+
 const Profile = () => {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   const [genderFilter, setGenderFilter] = useState(false);
 
-  // --- USER STATE ---
   const [user, setUser] = useState(() => {
     const savedUser = JSON.parse(localStorage.getItem("user"));
     return savedUser || null;
   });
 
-  // --- CONSTANTS & FALLBACKS ---
   const DEMO_STATS = {
     greenPoints: 1250,
     co2Saved: "45.8",
@@ -41,7 +41,6 @@ const Profile = () => {
   const [chartData, setChartData] = useState(DEMO_CHART);
   const [loading, setLoading] = useState(true);
 
-  // --- DATA FETCHING ---
   useEffect(() => {
     let isMounted = true;
 
@@ -114,7 +113,6 @@ const Profile = () => {
     };
   }, [user]);
 
-  // --- ACTIONS ---
   const handleImageUpload = (event) => {
     const file = event.target.files[0];
     if (file) {
@@ -141,7 +139,6 @@ const Profile = () => {
 
   return (
     <div className="min-h-screen bg-[#f8fafc] flex flex-col font-sans antialiased">
-      {/* Decorative Blobs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none opacity-40">
         <div className="absolute -top-24 -left-24 w-96 h-96 bg-emerald-100 rounded-full blur-3xl"></div>
         <div className="absolute top-1/2 -right-24 w-80 h-80 bg-blue-100 rounded-full blur-3xl"></div>
@@ -149,9 +146,7 @@ const Profile = () => {
 
       <main className="relative z-10 flex-grow max-w-6xl mx-auto w-full px-4 py-10">
         <div className="grid lg:grid-cols-12 gap-6">
-          {/* --- LEFT COLUMN --- */}
           <div className="lg:col-span-4 space-y-6">
-            {/* Profile Card */}
             <div className="bg-white/80 backdrop-blur-md p-6 rounded-[2rem] shadow-sm border border-white/60 text-center group">
               <div className="relative mx-auto w-24 h-24 mb-4">
                 <div className="w-24 h-24 rounded-full overflow-hidden shadow-2xl ring-4 ring-emerald-50 group-hover:ring-emerald-100 transition-all duration-300 bg-slate-100">
@@ -203,7 +198,6 @@ const Profile = () => {
               </div>
             </div>
 
-            {/* Safety Preferences */}
             <div className="bg-white/80 backdrop-blur-md p-5 rounded-[1.5rem] shadow-sm border border-white/60">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
                 <div className="w-1 h-4 bg-emerald-500 rounded-full"></div>
@@ -236,9 +230,14 @@ const Profile = () => {
             </div>
           </div>
 
-          {/* --- RIGHT COLUMN --- */}
           <div className="lg:col-span-8 space-y-6">
-            {/* Bento Grid Stats */}
+            {!loading && (
+              <EcoLoopCoach
+                totalKmSaved={parseFloat(stats.co2Saved) / 0.12} 
+                totalCo2Saved={parseFloat(stats.co2Saved)}
+              />
+            )}
+
             <div className="grid md:grid-cols-3 gap-4">
               <div className="bg-emerald-600 p-5 rounded-[1.5rem] text-white shadow-xl shadow-emerald-200/50 relative overflow-hidden group">
                 <div className="absolute top-0 right-0 p-4 opacity-10 text-6xl group-hover:rotate-12 transition-transform">
@@ -283,7 +282,6 @@ const Profile = () => {
               </div>
             </div>
 
-            {/* Chart Section */}
             <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200/60">
               <div className="flex justify-between items-center mb-6">
                 <h3 className="font-bold text-slate-900 text-sm uppercase tracking-widest">
@@ -349,7 +347,6 @@ const Profile = () => {
               </div>
             </div>
 
-            {/* Reward Milestone */}
             <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200/60">
               <div className="flex items-center gap-5 p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100/50">
                 <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-xl shadow-sm">
