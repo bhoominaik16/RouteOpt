@@ -1,81 +1,142 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { onAuthStateChanged } from "firebase/auth";
-import { auth, db } from "../firebase"; // Ensure db is imported
+import ReactGA from "react-ga4";
+import { auth, db } from "../firebase"; 
 import { collection, getDocs, doc, getDoc } from "firebase/firestore";
 import dashboardPreview from "../assets/LandingImage.png";
+
+// Import Recharts components for the visual dashboard
+import { 
+AreaChart, Area, XAxis, YAxis, CartesianGrid, 
+Tooltip, ResponsiveContainer 
+} from 'recharts';
 
 const Landing = () => {
   const [user, setUser] = useState(null);
   const [topCommuters, setTopCommuters] = useState([]);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(true);
 
+  // --- 📊 ANALYTICS STATES ---
+  const [timeframe, setTimeframe] = useState('monthly');
+  const [chartData, setChartData] = useState([]);
+  const [impactStats, setImpactStats] = useState({
+    daily: { co2: "0.0", energy: "0.0" },
+    weekly: { co2: "0.0", energy: "0.0" },
+    monthly: { co2: "0.0", energy: "0.0" },
+    total: { co2: "0", energy: "0", commuters: "0" } // Added for Collective Impact
+  });
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, setUser);
     return () => unsub();
   }, []);
 
-  // --- 🔥 FETCH REAL LEADERBOARD DATA ---
+  // --- 🔥 FETCH LEADERBOARD & IMPACT ANALYTICS ---
   useEffect(() => {
-    const fetchLeaderboard = async () => {
+    const fetchAllData = async () => {
       try {
-        // 1. Get ALL rides (In a huge app, you'd use a cloud function for this)
         const querySnapshot = await getDocs(collection(db, "rides"));
-        
+        const usersSnapshot = await getDocs(collection(db, "users")); // Fetch total users
+        const now = new Date();
         const driverStats = {};
+        
+        let rawImpact = { daily: 0, weekly: 0, monthly: 0, totalDist: 0 };
+        let trendMap = {}; // To group data by date for the chart
 
-        // 2. Aggregate Data: Sum up distance per Driver
         querySnapshot.forEach((doc) => {
-           const ride = doc.data();
-           if (ride.driverId && ride.distance) {
-               const dist = parseFloat(ride.distance);
-               if (!driverStats[ride.driverId]) {
-                   driverStats[ride.driverId] = 0;
-               }
-               driverStats[ride.driverId] += dist;
-           }
+          const ride = doc.data();
+          if (ride.distance && ride.createdAt) {
+            const dist = parseFloat(ride.distance);
+            const rideDate = ride.createdAt.toDate();
+            const diffDays = (now - rideDate) / (1000 * 60 * 60 * 24);
+
+            rawImpact.totalDist += dist; // Aggregate total platform distance
+
+            // 1. Accumulate Driver Stats for Leaderboard
+            if (ride.driverId) {
+              driverStats[ride.driverId] = (driverStats[ride.driverId] || 0) + dist;
+            }
+
+            // 2. Accumulate Platform-wide Impact
+            if (diffDays <= 1) rawImpact.daily += dist;
+            if (diffDays <= 7) rawImpact.weekly += dist;
+            if (diffDays <= 30) {
+              rawImpact.monthly += dist;
+              
+              // 3. Prepare Chart Data (grouping by date)
+              const dateKey = rideDate.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+              trendMap[dateKey] = (trendMap[dateKey] || 0) + (dist * 0.12);
+            }
+          }
         });
 
-        // 3. Sort Drivers by Distance (Highest First) & Take Top 3
-        const sortedDriverIds = Object.keys(driverStats)
-            .sort((a, b) => driverStats[b] - driverStats[a])
-            .slice(0, 3);
+        // Convert Raw Distance to Impact Metrics
+        // 0.12kg CO2 per km | 0.05 Liters fuel per km
+        const formatMetrics = (d) => ({
+          co2: (d * 0.12).toFixed(1),
+          energy: (d * 0.05).toFixed(1)
+        });
 
-        // 4. Fetch User Details for the Top 3
+        setImpactStats({
+          daily: formatMetrics(rawImpact.daily),
+          weekly: formatMetrics(rawImpact.weekly),
+          monthly: formatMetrics(rawImpact.monthly),
+          total: {
+            co2: Math.round(rawImpact.totalDist * 0.12).toLocaleString(),
+            energy: Math.round(rawImpact.totalDist * 0.05).toLocaleString(),
+            commuters: usersSnapshot.size
+          }
+        });
+
+        // Format chart trend data
+        const trendArray = Object.keys(trendMap).map(date => ({
+          date,
+          co2: parseFloat(trendMap[date].toFixed(2))
+        })).sort((a, b) => new Date(a.date) - new Date(b.date)).slice(-10); // Show last 10 active days
+        setChartData(trendArray);
+
+        // 4. Sort and Fetch Top 3 Drivers
+        const sortedIds = Object.keys(driverStats).sort((a, b) => driverStats[b] - driverStats[a]).slice(0, 3);
         const leaderboardData = await Promise.all(
-            sortedDriverIds.map(async (uid, index) => {
-                const userDoc = await getDoc(doc(db, "users", uid));
-                const userData = userDoc.exists() ? userDoc.data() : { name: "Unknown", email: "" };
-                
-                // Guess Institution from Email (Simple Logic)
-                const emailDomain = userData.email ? userData.email.split('@')[1] : "Partner";
-                const institution = emailDomain.includes('ves') ? 'VESIT' : 
-                                    emailDomain.includes('tcs') ? 'TCS' : 'Partner Org';
-
-                return {
-                    name: userData.name || "Anonymous",
-                    institution: institution,
-                    co2: (driverStats[uid] * 0.12).toFixed(1) + " kg", // Calculate CO2
-                    rank: index + 1,
-                    profileImage: userData.profileImage || null // Use real image
-                };
-            })
+          sortedIds.map(async (uid, index) => {
+            const userDoc = await getDoc(doc(db, "users", uid));
+            const userData = userDoc.exists() ? userDoc.data() : { name: "Unknown" };
+            return {
+              name: userData.name || "Anonymous",
+              institution: userData.email?.includes('ves') ? 'VESIT' : 'Partner Org',
+              co2: (driverStats[uid] * 0.12).toFixed(1) + " kg",
+              rank: index + 1,
+              profileImage: userData.profileImage || null
+            };
+          })
         );
-
         setTopCommuters(leaderboardData);
+
       } catch (error) {
-        console.error("Error loading leaderboard:", error);
+        console.error("Error fetching data:", error);
       } finally {
         setLoadingLeaderboard(false);
       }
     };
 
-    fetchLeaderboard();
+    fetchAllData();
   }, []);
 
-  const stats = [
-    { label: 'CO₂ Saved', value: '1,284 kg', icon: '🌱', color: 'text-emerald-500' },
-    { label: 'Active Commuters', value: '450+', icon: '👥', color: 'text-blue-500' },
+  const handleTimeframeChange = (t) => {
+    setTimeframe(t);
+    // Google Analytics Event Tracking
+    ReactGA.event({
+      category: "Analytics",
+      action: "Toggle_Timeframe",
+      label: t
+    });
+  };
+
+  // --- 🔥 UPDATED: DYNAMIC IMPACT STATS ---
+  const dynamicStats = [
+    { label: 'CO₂ Saved', value: `${impactStats.total.co2} kg`, icon: '🌱', color: 'text-emerald-500' },
+    { label: 'Active Commuters', value: `${impactStats.total.commuters}+`, icon: '👥', color: 'text-blue-500' },
     { label: 'Partner Colleges', value: '12', icon: '🏛️', color: 'text-purple-500' },
   ];
 
@@ -115,7 +176,7 @@ const Landing = () => {
         </div>
       </header>
 
-      {/* 🔥 NEW DYNAMIC LEADERBOARD SECTION */}
+      {/* LEADERBOARD SECTION */}
       <section className="py-24 bg-white border-y border-slate-100">
         <div className="max-w-7xl mx-auto px-6 grid lg:grid-cols-2 gap-16 items-center">
           <div>
@@ -126,8 +187,6 @@ const Landing = () => {
             <p className="text-slate-600 text-lg mb-8">
               Join the leaderboard and earn eco-badges for every ride you share. Verified impact by verified commuters.
             </p>
-            
-            {/* Show Top 1 Highlight if data exists */}
             {topCommuters.length > 0 && (
                 <div className="flex items-center gap-4 p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
                 <span className="text-2xl">🏆</span>
@@ -140,57 +199,112 @@ const Landing = () => {
 
           <div className="space-y-4">
             {loadingLeaderboard ? (
-                <div className="text-center py-10 text-slate-400 animate-pulse">
-                    Calculating Impact...
-                </div>
+                <div className="text-center py-10 text-slate-400 animate-pulse">Calculating Impact...</div>
             ) : topCommuters.length === 0 ? (
-                <div className="p-6 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-center text-slate-500">
-                    No rides recorded yet. Be the first!
-                </div>
+                <div className="p-6 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-center text-slate-500">No rides recorded yet.</div>
             ) : (
                 topCommuters.map((commuter, idx) => (
-                <div 
-                    key={idx} 
-                    className={`flex items-center justify-between p-6 rounded-2xl border transition-all hover:scale-[1.02] ${
-                    commuter.rank === 1 
-                    ? 'bg-gradient-to-r from-emerald-50 to-white border-emerald-200 shadow-md' 
-                    : 'bg-white border-slate-100'
-                    }`}
-                >
+                <div key={idx} className={`flex items-center justify-between p-6 rounded-2xl border transition-all hover:scale-[1.02] ${commuter.rank === 1 ? 'bg-gradient-to-r from-emerald-50 to-white border-emerald-200 shadow-md' : 'bg-white border-slate-100'}`}>
                     <div className="flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg shrink-0 ${
-                        commuter.rank === 1 ? 'bg-amber-100 text-amber-600' : 
-                        commuter.rank === 2 ? 'bg-slate-100 text-slate-500' : 
-                        'bg-orange-100 text-orange-600'
-                    }`}>
-                        {commuter.rank}
-                    </div>
-                    
-                    {/* 👇 Updated to use Real Profile Image */}
-                    <div className="w-12 h-12 rounded-full overflow-hidden bg-slate-200 border-2 border-white shadow-sm shrink-0">
-                        {commuter.profileImage ? (
-                            <img src={commuter.profileImage} alt={commuter.name} className="w-full h-full object-cover" />
-                        ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-emerald-600 text-white font-bold text-xl">
-                                {commuter.name[0]}
-                            </div>
-                        )}
-                    </div>
-
-                    <div>
-                        <h4 className="font-bold text-slate-900">{commuter.name}</h4>
-                        <p className="text-xs text-slate-500 font-semibold uppercase">{commuter.institution}</p>
-                    </div>
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg shrink-0 ${commuter.rank === 1 ? 'bg-amber-100 text-amber-600' : commuter.rank === 2 ? 'bg-slate-100 text-slate-500' : 'bg-orange-100 text-orange-600'}`}>
+                          {commuter.rank}
+                      </div>
+                      <div className="w-12 h-12 rounded-full overflow-hidden bg-slate-200 border-2 border-white shadow-sm shrink-0">
+                          {commuter.profileImage ? (
+                              <img src={commuter.profileImage} alt={commuter.name} className="w-full h-full object-cover" />
+                          ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-emerald-600 text-white font-bold text-xl">{commuter.name[0]}</div>
+                          )}
+                      </div>
+                      <div>
+                          <h4 className="font-bold text-slate-900">{commuter.name}</h4>
+                          <p className="text-xs text-slate-500 font-semibold uppercase">{commuter.institution}</p>
+                      </div>
                     </div>
                     <div className="text-right">
-                    <p className="text-lg font-bold text-emerald-600">{commuter.co2}</p>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Saved</p>
+                      <p className="text-lg font-bold text-emerald-600">{commuter.co2}</p>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Saved</p>
                     </div>
                 </div>
                 ))
             )}
           </div>
         </div>
+      </section>
+
+      {/* 📊 IMPACT ANALYTICS SECTION */}
+      <section className="py-24 bg-slate-900 text-white relative overflow-hidden">
+        <div className="max-w-7xl mx-auto px-6 relative z-10">
+          <div className="flex flex-col md:flex-row justify-between items-end mb-12 gap-6">
+            <div>
+              <h2 className="text-4xl font-bold mb-4">Platform <span className="text-emerald-400">Live Impact</span></h2>
+              <p className="text-slate-400">Public environmental analytics powered by our community commutes.</p>
+            </div>
+            
+            <div className="flex bg-slate-800 p-1 rounded-xl border border-slate-700">
+              {['daily', 'weekly', 'monthly'].map((t) => (
+                <button
+                  key={t}
+                  onClick={() => handleTimeframeChange(t)}
+                  className={`px-6 py-2 rounded-lg text-sm font-bold capitalize transition-all ${
+                    timeframe === t ? 'bg-emerald-500 text-white shadow-lg' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid lg:grid-cols-3 gap-8">
+            <div className="space-y-6">
+              <div className="bg-slate-800/50 backdrop-blur p-8 rounded-[2.5rem] border border-slate-700 hover:border-emerald-500/50 transition-all">
+                <div className="w-12 h-12 bg-emerald-500/20 rounded-xl flex items-center justify-center text-2xl mb-4">🌱</div>
+                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">CO₂ Prevented</p>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-5xl font-black text-white">{impactStats[timeframe].co2}</span>
+                  <span className="text-xl font-bold text-emerald-400">kg</span>
+                </div>
+              </div>
+
+              <div className="bg-slate-800/50 backdrop-blur p-8 rounded-[2.5rem] border border-slate-700 hover:border-blue-500/50 transition-all">
+                <div className="w-12 h-12 bg-blue-500/20 rounded-xl flex items-center justify-center text-2xl mb-4">⚡</div>
+                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">Energy Conserved</p>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-5xl font-black text-white">{impactStats[timeframe].energy}</span>
+                  <span className="text-xl font-bold text-blue-400">Liters</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Visual Trend Chart Card */}
+            <div className="lg:col-span-2 bg-slate-800/30 backdrop-blur p-8 rounded-[2.5rem] border border-slate-700 h-[420px]">
+              <h3 className="text-sm font-bold text-slate-400 mb-8 uppercase tracking-tighter flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                Environmental Impact Trend (Last 30 Days)
+              </h3>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
+                  <defs>
+                    <linearGradient id="colorCo2" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                  <XAxis dataKey="date" stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} dy={10} />
+                  <YAxis stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', fontSize: '12px' }}
+                    itemStyle={{ color: '#10b981' }}
+                  />
+                  <Area type="monotone" dataKey="co2" name="CO2 Saved (kg)" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorCo2)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-emerald-500/5 blur-[120px] pointer-events-none" />
       </section>
 
       {/* FEATURES SECTION */}
@@ -218,8 +332,9 @@ const Landing = () => {
                 <p className="text-slate-400 text-sm">Real-time emissions saved by our community.</p>
              </div>
              <div className="relative z-10 space-y-4">
-                {stats.map((stat, idx) => (
-                  <div key={idx} className="bg-slate-800/50 backdrop-blur border border-slate-700 p-4 rounded-xl">
+                {/* 🔥 DYNAMIC DATA: Mapped from dynamicStats logic */}
+                {dynamicStats.map((stat, idx) => (
+                  <div key={idx} className="bg-slate-800/50 backdrop-blur border border-slate-700 p-4 rounded-xl transition-all hover:border-slate-500">
                     <div className="flex justify-between items-center mb-1">
                       <span className="text-2xl text-white">{stat.icon}</span>
                       <span className={`text-xl font-bold ${stat.color}`}>{stat.value}</span>
@@ -239,7 +354,7 @@ const Landing = () => {
              <div className="relative z-10">
                 <h3 className="text-xl font-bold text-slate-900 mb-2">Polyline Algo</h3>
              </div>
-             <div className="absolute bottom-0 left-0 w-full h-24 flex items-end px-8 pb-8 gap-1">
+             <div className="absolute bottom-0 left-0 w-full h-24 flex items-end px-8 pb-8 gap-1 opacity-50">
                 <div className="w-1/4 h-8 bg-emerald-200 rounded-t-lg"></div>
                 <div className="w-1/4 h-16 bg-emerald-300 rounded-t-lg"></div>
                 <div className="w-1/4 h-20 bg-emerald-500 rounded-t-lg"></div>
@@ -247,7 +362,6 @@ const Landing = () => {
           </div>
         </div>
       </section>
-
     </div>
   );
 };
