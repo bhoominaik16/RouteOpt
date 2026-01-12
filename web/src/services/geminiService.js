@@ -1,3 +1,4 @@
+// src/services/geminiService.js
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
@@ -8,9 +9,11 @@ if (!API_KEY) {
 
 const genAI = new GoogleGenerativeAI(API_KEY);
 
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 /**
+ * FEATURE B: Eco-Loop AI Coach
+ * Generates a short, motivational tip based on user stats.
  * * @param {number} kmSaved - Total Kilometers saved by carpooling
  * @param {number} co2Saved - Total KG of CO2 saved
  * @returns {Promise<string>} A single sentence motivational string.
@@ -22,7 +25,7 @@ export const generateEcoTip = async (kmSaved, co2Saved) => {
 
     if (km <= 5 && co2 <= 1) {
         return new Promise(resolve => 
-            setTimeout(() => resolve("Take your first shared ride today to unlock AI-powered eco-insights!"), 300)
+            setTimeout(() => resolve("Take your first shared ride today to unlock AI-powered eco-insights!"), 800)
         );
     }
 
@@ -32,7 +35,7 @@ export const generateEcoTip = async (kmSaved, co2Saved) => {
       
       Task: Generate a single, short, punchy, 1-sentence motivational "Green Fact" or specific comparison based on this data to encourage them.
       
-      Examples of desired tone/output style: 
+      Examples of desired tone: 
       - "That's enough energy saved to charge over 500 smartphones!"
       - "You've offset the equivalent carbon of planting two new trees this month!"
       - "Incredible work; your choices are making the campus air cleaner every day."
