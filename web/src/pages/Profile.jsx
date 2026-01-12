@@ -17,13 +17,11 @@ const Profile = () => {
   const fileInputRef = useRef(null);
   const [genderFilter, setGenderFilter] = useState(false);
 
-  // --- USER STATE ---
   const [user, setUser] = useState(() => {
     const savedUser = JSON.parse(localStorage.getItem("user"));
     return savedUser || null;
   });
 
-  // --- CONSTANTS & FALLBACKS ---
   const DEMO_STATS = {
     greenPoints: 1250,
     co2Saved: "45.8",
@@ -41,7 +39,6 @@ const Profile = () => {
   const [chartData, setChartData] = useState(DEMO_CHART);
   const [loading, setLoading] = useState(true);
 
-  // --- DATA FETCHING ---
   useEffect(() => {
     let isMounted = true;
 
@@ -78,7 +75,6 @@ const Profile = () => {
             const date = ride.createdAt.toDate();
             const month = date.toLocaleString("default", { month: "short" });
             if (!monthlyData[month]) monthlyData[month] = 0;
-            // $CO_2$ Formula: $0.12 \text{ kg/km}$
             monthlyData[month] += distance * 0.12;
           }
         });
@@ -114,7 +110,6 @@ const Profile = () => {
     };
   }, [user]);
 
-  // --- ACTIONS ---
   const handleImageUpload = (event) => {
     const file = event.target.files[0];
     if (file) {
@@ -130,6 +125,11 @@ const Profile = () => {
     }
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem("user");
+    navigate("/");
+  };
+
   if (!user)
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -141,18 +141,15 @@ const Profile = () => {
 
   return (
     <div className="min-h-screen bg-[#f8fafc] flex flex-col font-sans antialiased">
-      {/* Decorative Blobs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none opacity-40">
         <div className="absolute -top-24 -left-24 w-96 h-96 bg-emerald-100 rounded-full blur-3xl"></div>
         <div className="absolute top-1/2 -right-24 w-80 h-80 bg-blue-100 rounded-full blur-3xl"></div>
       </div>
 
-      <main className="relative z-10 flex-grow max-w-6xl mx-auto w-full px-4 py-10">
+      <main className="relative z-10 grow max-w-6xl mx-auto w-full px-4 py-10">
         <div className="grid lg:grid-cols-12 gap-6">
-          {/* --- LEFT COLUMN --- */}
           <div className="lg:col-span-4 space-y-6">
-            {/* Profile Card */}
-            <div className="bg-white/80 backdrop-blur-md p-6 rounded-[2rem] shadow-sm border border-white/60 text-center group">
+            <div className="bg-white/80 backdrop-blur-md p-6 rounded-4xl shadow-sm border border-white/60 text-center group">
               <div className="relative mx-auto w-24 h-24 mb-4">
                 <div className="w-24 h-24 rounded-full overflow-hidden shadow-2xl ring-4 ring-emerald-50 group-hover:ring-emerald-100 transition-all duration-300 bg-slate-100">
                   {user.profileImage ? (
@@ -198,13 +195,31 @@ const Profile = () => {
                 {user.name}
               </h2>
               <p className="text-xs text-slate-500 mb-4">{user.email}</p>
-              <div className="inline-flex px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-[10px] font-bold tracking-widest uppercase border border-emerald-100">
-                Verified Resident
+
+              <div className="flex flex-col items-center gap-2">
+                {user.isVerified ? (
+                  <>
+                    <div className="inline-flex px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-[10px] font-bold tracking-widest uppercase border border-emerald-100">
+                      ✓ Verified Student
+                    </div>
+                    {user.institution && (
+                      <p className="text-xs text-slate-500 font-medium">
+                        {user.institution}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <button
+                    onClick={() => navigate("/verify")}
+                    className="inline-flex px-4 py-2 bg-amber-50 text-amber-700 rounded-lg text-xs font-bold border border-amber-200 hover:bg-amber-100 transition-colors"
+                  >
+                    ⚠️ Verify ID Now
+                  </button>
+                )}
               </div>
             </div>
 
-            {/* Safety Preferences */}
-            <div className="bg-white/80 backdrop-blur-md p-5 rounded-[1.5rem] shadow-sm border border-white/60">
+            <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl shadow-sm border border-white/60">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
                 <div className="w-1 h-4 bg-emerald-500 rounded-full"></div>
                 Account Settings
@@ -233,14 +248,19 @@ const Profile = () => {
                   />
                 </button>
               </div>
+
+              <button
+                onClick={handleLogout}
+                className="w-full mt-4 py-2 px-4 bg-red-50 text-red-600 text-xs font-bold rounded-xl hover:bg-red-100 transition-colors"
+              >
+                Log Out
+              </button>
             </div>
           </div>
 
-          {/* --- RIGHT COLUMN --- */}
           <div className="lg:col-span-8 space-y-6">
-            {/* Bento Grid Stats */}
             <div className="grid md:grid-cols-3 gap-4">
-              <div className="bg-emerald-600 p-5 rounded-[1.5rem] text-white shadow-xl shadow-emerald-200/50 relative overflow-hidden group">
+              <div className="bg-emerald-600 p-5 rounded-3xl text-white shadow-xl shadow-emerald-200/50 relative overflow-hidden group">
                 <div className="absolute top-0 right-0 p-4 opacity-10 text-6xl group-hover:rotate-12 transition-transform">
                   🌱
                 </div>
@@ -253,7 +273,7 @@ const Profile = () => {
                 </p>
               </div>
 
-              <div className="bg-white p-5 rounded-[1.5rem] border border-slate-200/60 shadow-sm relative group overflow-hidden">
+              <div className="bg-white p-5 rounded-3xl border border-slate-200/60 shadow-sm relative group overflow-hidden">
                 <div className="absolute top-0 right-0 w-16 h-16 bg-blue-50/50 rounded-bl-full -mr-4 -mt-4 z-0"></div>
                 <div className="relative z-10">
                   <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">
@@ -270,7 +290,7 @@ const Profile = () => {
                 </div>
               </div>
 
-              <div className="bg-white p-5 rounded-[1.5rem] border border-slate-200/60 shadow-sm">
+              <div className="bg-white p-5 rounded-3xl border border-slate-200/60 shadow-sm">
                 <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">
                   Campus Rank
                 </p>
@@ -283,8 +303,7 @@ const Profile = () => {
               </div>
             </div>
 
-            {/* Chart Section */}
-            <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200/60">
+            <div className="bg-white p-6 rounded-4xl shadow-sm border border-slate-200/60">
               <div className="flex justify-between items-center mb-6">
                 <h3 className="font-bold text-slate-900 text-sm uppercase tracking-widest">
                   Savings History
@@ -349,13 +368,12 @@ const Profile = () => {
               </div>
             </div>
 
-            {/* Reward Milestone */}
-            <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200/60">
+            <div className="bg-white p-6 rounded-4xl shadow-sm border border-slate-200/60">
               <div className="flex items-center gap-5 p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100/50">
                 <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-xl shadow-sm">
                   🅿️
                 </div>
-                <div className="flex-grow">
+                <div className="grow">
                   <div className="flex justify-between items-end mb-2">
                     <div>
                       <h4 className="font-bold text-emerald-900 text-xs">
