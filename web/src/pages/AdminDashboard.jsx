@@ -234,7 +234,7 @@ const AdminDashboard = () => {
                       </h4>
                       <div className="flex gap-2 mt-4">
                         <a
-                          href={`https://www.google.com/maps?q=${alert.location?.lat},${alert.location?.lng}`}
+                          href={`http://googleusercontent.com/maps.google.com/3{alert.location?.lat},${alert.location?.lng}`}
                           target="_blank"
                           rel="noreferrer"
                           className="flex-1 py-2 bg-white border border-slate-200 text-slate-600 text-[10px] font-bold rounded-xl text-center hover:bg-slate-50 transition"
@@ -353,6 +353,7 @@ const AdminDashboard = () => {
                           borderRadius: "16px",
                           border: "none",
                           boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)",
+                          fontSize: "12px",
                         }}
                       />
                       <Area
@@ -390,7 +391,7 @@ const AdminDashboard = () => {
       {/* 🔥 DETAILS MODAL */}
       {selectedUser && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-[2rem] p-8 max-w-md w-full shadow-2xl relative">
+          <div className="bg-white rounded-[2rem] p-8 max-w-md w-full shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
             <button
               onClick={() => setSelectedUser(null)}
               className="absolute top-6 right-6 text-slate-400 hover:text-slate-600"
@@ -403,24 +404,68 @@ const AdminDashboard = () => {
             </h2>
 
             <div className="space-y-4 mb-8">
-              <DetailRow label="Registered Name" value={selectedUser.name} />
-              <DetailRow label="Institution Email" value={selectedUser.email} />
-              <DetailRow
-                label="ID Detected Name"
-                value={selectedUser.studentName || "N/A (AI Failed)"}
-              />
-              <DetailRow
-                label="Institution"
-                value={selectedUser.organization || "Unknown"}
-              />
-              <div className="bg-amber-50 p-3 rounded-xl border border-amber-100">
-                <p className="text-[10px] font-bold text-amber-600 uppercase">
-                  Reason for Pending
+              {/* 📸 SUBMITTED IMAGE */}
+              <div className="mb-6">
+                <p className="text-xs font-bold text-slate-400 uppercase mb-2">
+                  Submitted ID Card
                 </p>
-                <p className="text-xs text-amber-800 mt-1">
-                  AI could not confidently match the Name or Institution. Please
-                  check if the Email Domain matches the Institution manually.
+                <div className="rounded-2xl overflow-hidden border-2 border-slate-100 bg-slate-50 shadow-inner flex justify-center">
+                  {selectedUser.idCardImage ? (
+                    <img
+                      src={selectedUser.idCardImage}
+                      alt="User Submitted ID"
+                      className="w-full h-auto max-h-[300px] object-contain"
+                    />
+                  ) : (
+                    <div className="p-8 text-center text-slate-400 text-xs font-bold">
+                      🚫 No Image Data Found
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* USER CLAIMED DATA */}
+              <div className="bg-slate-50 p-4 rounded-xl">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                  User Claimed
                 </p>
+                <DetailRow label="Name" value={selectedUser.name} />
+                <DetailRow label="Email" value={selectedUser.email} />
+              </div>
+
+              {/* 🤖 AI DETECTED DATA (Corrected) */}
+              <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-100">
+                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">
+                  AI Analysis
+                </p>
+
+                {/* 1. Name detected on ID */}
+                <DetailRow
+                  label="Name on ID"
+                  value={selectedUser.studentName || "Not Detected"}
+                />
+
+                {/* 2. Institution detected on ID (Uses new field if available) */}
+                <DetailRow
+                  label="Institution on ID"
+                  value={selectedUser.aiInstitution || "Not Detected"}
+                />
+
+                {/* 3. AI Confidence / Status */}
+                <div className="flex justify-between items-center pt-2 mt-1 border-t border-emerald-100">
+                  <span className="text-xs font-bold text-slate-400 uppercase">
+                    Match Status
+                  </span>
+                  <span
+                    className={`text-xs font-bold ${
+                      selectedUser.verificationStatus === "verified"
+                        ? "text-emerald-600"
+                        : "text-amber-600"
+                    }`}
+                  >
+                    {selectedUser.verificationReason || "Pending Review"}
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -459,7 +504,7 @@ const StatCard = ({ title, value, color }) => (
 );
 
 const DetailRow = ({ label, value }) => (
-  <div className="flex justify-between items-center border-b border-slate-50 pb-2">
+  <div className="flex justify-between items-center border-b border-slate-200/50 last:border-0 pb-2 mb-2 last:mb-0 last:pb-0">
     <span className="text-xs font-bold text-slate-400 uppercase">{label}</span>
     <span className="text-sm font-bold text-slate-900">{value}</span>
   </div>

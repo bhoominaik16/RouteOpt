@@ -150,7 +150,7 @@ const Landing = () => {
           </div>
           <h1 className="text-5xl md:text-7xl font-extrabold leading-tight tracking-tight">
             Commute <br />
-            <span className="text-emerald-600">Smarter.</span>
+            <span className="text-emerald-600">Smarter</span>
           </h1>
           <p className="text-lg text-slate-600 max-w-lg">
             A trusted carpooling platform for close-knit communities. Safer
