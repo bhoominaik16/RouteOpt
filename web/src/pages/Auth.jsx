@@ -28,31 +28,14 @@ const Auth = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  // 🧠 LOGIC 1: Fuzzy Name Matching (Robust)
+  // 🧠 LOGIC 1: Fuzzy Name Matching
   const isNameMatch = (inputName, extractedName) => {
     if (!extractedName) return false;
-
-    // Normalize: lowercase, remove special chars, trim extra spaces
-    // "Neha Kadam" -> "nehakadam"
     const cleanInput = inputName.toLowerCase().replace(/[^a-z]/g, "");
     const cleanExtracted = extractedName.toLowerCase().replace(/[^a-z]/g, "");
-
-    // Check if one contains the other
     return (
       cleanExtracted.includes(cleanInput) || cleanInput.includes(cleanExtracted)
     );
-  };
-
-  // 🧠 LOGIC 2: Institution & Email Matching
-  const isInstitutionMatch = (email, institutionName) => {
-    if (!institutionName) return true; // Be lenient if AI missed the college name
-
-    // "name@somaiya.edu" -> "somaiya"
-    const emailDomain = email.split("@")[1]?.split(".")[0]?.toLowerCase();
-    const cleanInstitution = institutionName.toLowerCase();
-
-    // Check if domain part is inside the institution name
-    return cleanInstitution.includes(emailDomain);
   };
 
   const handleSubmit = async (e) => {
@@ -87,7 +70,7 @@ const Auth = () => {
       }
 
       // ===========================
-      // 📝 SIGNUP LOGIC (Strict)
+      // 📝 SIGNUP LOGIC (ALL FALLBACKS TO ADMIN)
       // ===========================
       else {
         if (password !== confirmPassword) {
@@ -98,7 +81,7 @@ const Auth = () => {
         }
 
         // 1. Verify ID with Backend
-        toast.loading("Scanning ID Card details...", { id: "verifyToast" });
+        toast.loading("Scanning ID Card...", { id: "verifyToast" });
 
         const verifyData = new FormData();
         verifyData.append("idCard", idFile);
@@ -112,55 +95,44 @@ const Auth = () => {
         const result = await response.json();
         toast.dismiss("verifyToast");
 
-        // 2. LOGIC: Determine Verification Status
+        // 2. LOGIC: Determine Status (NEVER BLOCK, JUST PENDING)
         let isVerified = false;
-        let verificationStatus = "unverified";
+        let verificationStatus = "pending"; // Default to pending
         let institutionName = "";
-        let studentName = name;
+        let studentName = name; // Default to user input
+        let verificationReason = "Manual Review Required";
 
-        // --- SCENARIO A: AI Says Valid ---
-        if (result.isValid) {
-          // Check Name Match
-          if (!isNameMatch(name, result.name)) {
-            throw new Error(
-              `Name Mismatch! ID says: "${result.name}" but you typed: "${name}".`
-            );
-          }
-
-          // Check Email/Institution Match (Optional Warning)
-          if (!isInstitutionMatch(email, result.institution)) {
-            toast("Note: Your email domain doesn't match the ID institution.", {
-              icon: "ℹ️",
-              duration: 5000,
-            });
-          }
-
-          // If passed
+        // --- SCENARIO A: Perfect Match ---
+        if (result.isValid && isNameMatch(name, result.name)) {
           isVerified = true;
           verificationStatus = "verified";
           institutionName = result.institution;
-          studentName = result.name; // Use the official name from ID
-          toast.success("✅ ID Verified! Name matched.");
+          studentName = result.name;
+          verificationReason = "Auto-verified by AI";
+          toast.success("✅ ID Verified! Welcome.");
         }
-
-        // --- SCENARIO B: AI Unsure (Pending) ---
-        else if (result.isPending) {
-          // Allow signup, but mark unverified
+        // --- SCENARIO B: Name Mismatch ---
+        else if (result.isValid && !isNameMatch(name, result.name)) {
           isVerified = false;
           verificationStatus = "pending";
-          toast("⚠️ AI couldn't read ID. Sent to Admin for manual check.", {
+          verificationReason = `Name Mismatch: ID says '${result.name}'`;
+          toast("⚠️ Name didn't match. Sent to Admin for review.", {
             icon: "⏳",
+            duration: 5000,
+          });
+        }
+        // --- SCENARIO C: AI Failed / Invalid / Blurry ---
+        else {
+          isVerified = false;
+          verificationStatus = "pending";
+          verificationReason = result.reason || "AI could not read ID";
+          toast("⚠️ ID Scan unclear. Sent to Admin for review.", {
+            icon: "⏳",
+            duration: 5000,
           });
         }
 
-        // --- SCENARIO C: AI Says Invalid ---
-        else {
-          throw new Error(
-            "Invalid ID Card. Please upload a clear Student/Employee ID."
-          );
-        }
-
-        // 3. Create Firebase Account
+        // 3. Create Firebase Account (Even if pending)
         const userCredential = await createUserWithEmailAndPassword(
           auth,
           email,
@@ -174,9 +146,10 @@ const Auth = () => {
           name,
           email,
           gender,
-          organization: institutionName || emailDomain, // Use detected institution if available
+          organization: institutionName || emailDomain,
           isVerified: isVerified,
           verificationStatus: verificationStatus,
+          verificationReason: verificationReason, // 🔥 Saved for Admin to see
           studentName: studentName,
           createdAt: serverTimestamp(),
         };
@@ -220,7 +193,6 @@ const Auth = () => {
         <form onSubmit={handleSubmit} className="space-y-4">
           {!isLogin && (
             <>
-              {/* Full Name */}
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1 ml-1">
                   Full Name (As on ID)
@@ -235,7 +207,6 @@ const Auth = () => {
                 />
               </div>
 
-              {/* Gender */}
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1 ml-1">
                   Gender
@@ -258,7 +229,6 @@ const Auth = () => {
             </>
           )}
 
-          {/* Email */}
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1 ml-1">
               Institution Email
@@ -273,7 +243,6 @@ const Auth = () => {
             />
           </div>
 
-          {/* Password */}
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1 ml-1">
               Password
@@ -290,7 +259,6 @@ const Auth = () => {
 
           {!isLogin && (
             <>
-              {/* Confirm Password */}
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1 ml-1">
                   Confirm Password
@@ -305,7 +273,6 @@ const Auth = () => {
                 />
               </div>
 
-              {/* 🔥 MANDATORY ID UPLOAD */}
               <div className="pt-2">
                 <label className="block text-sm font-bold text-slate-900 mb-2 ml-1">
                   Upload Student/Employee ID{" "}
@@ -327,14 +294,13 @@ const Auth = () => {
                   />
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1 ml-1">
-                  We check if your <b>Name</b> and <b>Email Domain</b> match
-                  this ID.
+                  If AI cannot verify this ID automatically, it will be sent to
+                  Admin for approval.
                 </p>
               </div>
             </>
           )}
 
-          {/* Submit Button */}
           <button
             type="submit"
             disabled={loading}

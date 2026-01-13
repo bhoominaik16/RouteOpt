@@ -1,7 +1,15 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { db } from "../firebase";
-import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  orderBy,
+  doc, // 🔥 Added
+  onSnapshot, // 🔥 Added
+} from "firebase/firestore";
 import {
   BarChart,
   Bar,
@@ -11,6 +19,7 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
+import toast from "react-hot-toast"; // 🔥 Added
 
 import EcoLoopCoach from "../components/EcoLoopCoach";
 
@@ -41,6 +50,46 @@ const Profile = () => {
   const [chartData, setChartData] = useState(DEMO_CHART);
   const [loading, setLoading] = useState(true);
 
+  // 🔥 1. REAL-TIME LISTENER: Updates Profile automatically when Admin Approves
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    const unsubUser = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
+      if (docSnap.exists()) {
+        const liveData = docSnap.data();
+
+        // Check if status changed from Pending -> Verified
+        if (liveData.isVerified && !user.isVerified) {
+          toast.success("🎉 You are now VERIFIED! Access Granted.");
+        }
+
+        // Check if status changed to Rejected
+        if (
+          liveData.verificationStatus === "rejected" &&
+          user.verificationStatus !== "rejected"
+        ) {
+          toast.error("❌ Your ID Verification was Rejected.");
+        }
+
+        // Sync with Local Storage so App.jsx knows we are allowed in
+        const updatedUser = { ...user, ...liveData };
+
+        // Only update state if something actually changed (prevents loops)
+        if (
+          JSON.stringify(updatedUser.isVerified) !==
+            JSON.stringify(user.isVerified) ||
+          updatedUser.verificationStatus !== user.verificationStatus
+        ) {
+          setUser(updatedUser);
+          localStorage.setItem("user", JSON.stringify(updatedUser));
+        }
+      }
+    });
+
+    return () => unsubUser();
+  }, [user?.uid]);
+
+  // 2. Existing Stats Logic
   useEffect(() => {
     let isMounted = true;
 
@@ -110,7 +159,7 @@ const Profile = () => {
     return () => {
       isMounted = false;
     };
-  }, [user]);
+  }, [user?.uid]); // Updated dependency
 
   const handleImageUpload = (event) => {
     const file = event.target.files[0];
@@ -166,7 +215,7 @@ const Profile = () => {
                     </div>
                   )}
                 </div>
-                {/* Profile Pic Upload Button (Still Active) */}
+
                 <button
                   onClick={() => fileInputRef.current.click()}
                   className="absolute bottom-0 right-0 bg-slate-900 text-white p-2 rounded-full shadow-lg hover:bg-emerald-600 transition-all transform hover:scale-110 active:scale-90"
@@ -199,21 +248,25 @@ const Profile = () => {
               </h2>
               <p className="text-xs text-slate-500 mb-4">{user.email}</p>
 
-              {/* READ ONLY VERIFICATION STATUS */}
+              {/* 🔥 UPDATED VERIFICATION STATUS BADGES */}
               <div className="flex flex-col items-center gap-2">
                 {user.isVerified ? (
                   <>
                     <div className="inline-flex px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-[10px] font-bold tracking-widest uppercase border border-emerald-100">
                       ✓ Verified Student
                     </div>
-                    {user.institution && (
+                    {user.organization && (
                       <p className="text-xs text-slate-500 font-medium">
-                        {user.institution}
+                        {user.organization}
                       </p>
                     )}
                   </>
+                ) : user.verificationStatus === "rejected" ? (
+                  <div className="inline-flex px-3 py-1 bg-red-50 text-red-700 rounded-full text-[10px] font-bold tracking-widest uppercase border border-red-100">
+                    ❌ Verification Rejected
+                  </div>
                 ) : (
-                  <div className="inline-flex px-3 py-1 bg-amber-50 text-amber-700 rounded-full text-[10px] font-bold tracking-widest uppercase border border-amber-100">
+                  <div className="inline-flex px-3 py-1 bg-amber-50 text-amber-700 rounded-full text-[10px] font-bold tracking-widest uppercase border border-amber-100 animate-pulse">
                     ⏳ Verification Pending
                   </div>
                 )}
