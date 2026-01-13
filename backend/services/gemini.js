@@ -4,26 +4,23 @@ require("dotenv").config();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 async function verifyIDCard(imageBuffer, mimeType) {
-  // FIXED: Using the "Lite Preview" model found in your available list.
-  // "Lite" models usually have better free tier availability than standard Flash/Pro.
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-  });
+  // FIXED: Updated to use the specific Gemini 2.5 Flash model
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
   const prompt = `
-    Analyze this image. It is an Organizational ID Card (Student ID, Employee ID, or Library Card).
+    Analyze this image. It is an Organizational ID Card (Student ID or Employee ID).
     
-    CRITICAL INSTRUCTIONS:
-    1. **ACCEPT** "Library Cards" as valid IDs if they have a Name, Photo, and Institution.
-    2. Extract the Name and Institution Name.
-    3. Do not fail just because the title is "Library Card".
+    CRITICAL EXTRACTION TASK:
+    1. **Extract Name**: Find the full name of the person.
+    2. **Extract Institution**: Find the name of the college, university, or company.
+    3. **Validity Check**: Mark as 'isValid: true' if it looks like a real ID card with a photo and name.
     
     Return ONLY raw JSON (no markdown):
     {
       "isValid": boolean, 
-      "name": "string",
+      "name": "string", 
       "institution": "string",
-      "reason": "explanation"
+      "reason": "explanation if invalid"
     }
   `;
 
@@ -35,16 +32,18 @@ async function verifyIDCard(imageBuffer, mimeType) {
   };
 
   try {
-    console.log("Sending to Gemini (2.0 Flash Lite)...");
+    console.log("Sending to Gemini (2.5 Flash)...");
     const result = await model.generateContent([prompt, imagePart]);
     const response = await result.response;
     const text = response.text();
 
+    // Clean markdown formatting if present
     const jsonStr = text.replace(/```json|```/g, "").trim();
     return JSON.parse(jsonStr);
   } catch (error) {
     console.error("Gemini Error:", error.message);
-    return { isValid: false, reason: "AI Service Error: " + error.message };
+    // Return pending so admin can manually check if AI fails
+    return { isValid: false, isPending: true, reason: "AI Extraction Failed" };
   }
 }
 

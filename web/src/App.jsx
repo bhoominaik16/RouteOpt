@@ -1,7 +1,13 @@
-import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
+import {
+  Routes,
+  Route,
+  useLocation,
+  useNavigate,
+  Navigate,
+} from "react-router-dom";
 import { useState, useEffect } from "react";
 import { Toaster, toast } from "react-hot-toast";
-import ReactGA from "react-ga4"; // Import GA4
+import ReactGA from "react-ga4";
 
 import Landing from "./pages/Landing";
 import Navbar from "./components/Navbar";
@@ -16,10 +22,28 @@ import RideDetails from "./pages/RideDetails";
 import RideGiverDashboard from "./pages/RideGiverDashboard";
 import SOSButton from "./components/SOSButton";
 import AdminDashboard from "./pages/AdminDashboard";
-import IDUploader from "./components/IDUploader";
 
-// Initialize GA4 with your Measurement ID
+// Initialize GA4
 ReactGA.initialize("G-DGMYLY6844");
+
+// 🔒 PROTECTED ROUTE COMPONENT
+// This blocks access to Ride pages if the user is NOT verified.
+const VerifiedRoute = ({ user, children }) => {
+  if (!user) {
+    return <Navigate to="/auth" replace />;
+  }
+  // If user exists but is NOT verified -> Send to Profile
+  if (!user.isVerified) {
+    return (
+      <Navigate
+        to="/profile"
+        state={{ error: "verification_required" }}
+        replace
+      />
+    );
+  }
+  return children;
+};
 
 function App() {
   const [user, setUser] = useState(JSON.parse(localStorage.getItem("user")));
@@ -32,30 +56,25 @@ function App() {
     setUser(loggedInUser);
   }, [location]);
 
-  // 2. Track Page Views on every route change (GA4)
+  // 2. Handle "Verification Required" Redirects
+  useEffect(() => {
+    if (location.state?.error === "verification_required") {
+      toast.error("🚫 You must be verified to access Rides!", {
+        duration: 4000,
+        icon: "🔒",
+      });
+      // Clear the state so the toast doesn't appear on refresh
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location, navigate]);
+
+  // 3. Track Page Views (GA4)
   useEffect(() => {
     ReactGA.send({
       hitType: "pageview",
       page: location.pathname + location.search,
     });
   }, [location]);
-
-  const handleVerificationSuccess = (data) => {
-    if (!user) return;
-
-    const updatedUser = {
-      ...user,
-      isVerified: true,
-      studentName: data.name,
-      institution: data.institution,
-    };
-
-    setUser(updatedUser);
-    localStorage.setItem("user", JSON.stringify(updatedUser));
-
-    toast.success(`Verified as student of ${data.institution}!`);
-    navigate("/");
-  };
 
   const isAdminPage = location.pathname.startsWith("/admin");
 
@@ -67,32 +86,55 @@ function App() {
 
       <main className="flex-grow">
         <Routes>
+          {/* --- PUBLIC ROUTES --- */}
           <Route path="/" element={<Landing />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="/history" element={<RideHistory />} />
 
-          {/* New Verification Route */}
+          {/* --- PROTECTED ROUTES (Require ID Verification) --- */}
           <Route
-            path="/verify"
+            path="/ride-selection"
             element={
-              <div className="flex items-center justify-center py-12">
-                <IDUploader
-                  userId={user?.uid}
-                  onVerificationSuccess={handleVerificationSuccess}
-                />
-              </div>
+              <VerifiedRoute user={user}>
+                <RideSelection />
+              </VerifiedRoute>
+            }
+          />
+          <Route
+            path="/ride-giver"
+            element={
+              <VerifiedRoute user={user}>
+                <RideGiver />
+              </VerifiedRoute>
+            }
+          />
+          <Route
+            path="/ride-taker"
+            element={
+              <VerifiedRoute user={user}>
+                <RideTaker />
+              </VerifiedRoute>
+            }
+          />
+          <Route
+            path="/ride-giver-dashboard"
+            element={
+              <VerifiedRoute user={user}>
+                <RideGiverDashboard />
+              </VerifiedRoute>
+            }
+          />
+          <Route
+            path="/ride-details/:id"
+            element={
+              <VerifiedRoute user={user}>
+                <RideDetails />
+              </VerifiedRoute>
             }
           />
 
-          <Route path="/ride-selection" element={<RideSelection />} />
-          <Route path="/ride-giver" element={<RideGiver />} />
-          <Route path="/ride-taker" element={<RideTaker />} />
-          <Route
-            path="/ride-giver-dashboard"
-            element={<RideGiverDashboard />}
-          />
-          <Route path="/ride-details/:id" element={<RideDetails />} />
-          <Route path="/history" element={<RideHistory />} />
+          {/* --- ADMIN ROUTE --- */}
           <Route path="/admin" element={<AdminDashboard />} />
         </Routes>
       </main>

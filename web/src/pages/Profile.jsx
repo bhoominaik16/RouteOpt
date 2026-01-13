@@ -166,6 +166,7 @@ const Profile = () => {
                     </div>
                   )}
                 </div>
+                {/* Profile Pic Upload Button (Still Active) */}
                 <button
                   onClick={() => fileInputRef.current.click()}
                   className="absolute bottom-0 right-0 bg-slate-900 text-white p-2 rounded-full shadow-lg hover:bg-emerald-600 transition-all transform hover:scale-110 active:scale-90"
@@ -198,6 +199,7 @@ const Profile = () => {
               </h2>
               <p className="text-xs text-slate-500 mb-4">{user.email}</p>
 
+              {/* READ ONLY VERIFICATION STATUS */}
               <div className="flex flex-col items-center gap-2">
                 {user.isVerified ? (
                   <>
@@ -211,12 +213,9 @@ const Profile = () => {
                     )}
                   </>
                 ) : (
-                  <button
-                    onClick={() => navigate("/verify")}
-                    className="inline-flex px-4 py-2 bg-amber-50 text-amber-700 rounded-lg text-xs font-bold border border-amber-200 hover:bg-amber-100 transition-colors"
-                  >
-                    ⚠️ Verify ID Now
-                  </button>
+                  <div className="inline-flex px-3 py-1 bg-amber-50 text-amber-700 rounded-full text-[10px] font-bold tracking-widest uppercase border border-amber-100">
+                    ⏳ Verification Pending
+                  </div>
                 )}
               </div>
             </div>
