@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { generateEcoTip } from '../services/geminiService';
+import { generateEcoTip } from '../services/gemini';
 import { Leaf, Sparkles, Loader2 } from 'lucide-react'; 
 
 const EcoLoopCoach = ({ totalKmSaved, totalCo2Saved }) => {

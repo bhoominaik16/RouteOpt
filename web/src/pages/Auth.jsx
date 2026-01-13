@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
+import { Eye, EyeOff } from "lucide-react"; // 🔥 Icons for toggle
 
 // 🔥 Firebase Imports
 import {
@@ -10,11 +11,18 @@ import {
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "../firebase";
 
+// 🔥 Import the new Frontend ID Service
+import { verifyIDCard } from "../services/gemini";
+
 const Auth = () => {
   const navigate = useNavigate();
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [idFile, setIdFile] = useState(null);
+
+  // 👁️ Password Visibility State
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -37,6 +45,29 @@ const Auth = () => {
       cleanExtracted.includes(cleanInput) || cleanInput.includes(cleanExtracted)
     );
   };
+
+  // 🧠 LOGIC 2: Password Strength Calculator
+  const getPasswordStrength = (pass) => {
+    if (!pass) return { score: 0, label: "", color: "bg-slate-200" };
+
+    let score = 0;
+    if (pass.length > 5) score++; // At least 6 chars
+    if (pass.length > 7 && /[0-9]/.test(pass)) score++; // 8+ chars & number
+    if (/[^A-Za-z0-9]/.test(pass)) score++; // Special char
+
+    switch (score) {
+      case 1:
+        return { score: 1, label: "Weak", color: "bg-red-500" };
+      case 2:
+        return { score: 2, label: "Medium", color: "bg-yellow-500" };
+      case 3:
+        return { score: 3, label: "Strong", color: "bg-emerald-500" };
+      default:
+        return { score: 0, label: "Too Short", color: "bg-slate-200" };
+    }
+  };
+
+  const passStrength = getPasswordStrength(formData.password);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -70,39 +101,34 @@ const Auth = () => {
       }
 
       // ===========================
-      // 📝 SIGNUP LOGIC (ALL FALLBACKS TO ADMIN)
+      // 📝 SIGNUP LOGIC (Serverless)
       // ===========================
       else {
         if (password !== confirmPassword) {
           throw new Error("Passwords do not match");
         }
+        if (passStrength.score < 2) {
+          // Enforce at least Medium strength
+          throw new Error("Password is too weak. Please make it stronger.");
+        }
         if (!idFile) {
           throw new Error("Please upload your Student ID Card.");
         }
 
-        // 1. Verify ID with Backend
+        // 1. Verify ID (Direct Frontend Call)
         toast.loading("Scanning ID Card...", { id: "verifyToast" });
 
-        const verifyData = new FormData();
-        verifyData.append("idCard", idFile);
-        verifyData.append("userId", "new_signup");
+        const result = await verifyIDCard(idFile);
 
-        const response = await fetch("http://localhost:5000/api/verify-id", {
-          method: "POST",
-          body: verifyData,
-        });
-
-        const result = await response.json();
         toast.dismiss("verifyToast");
 
-        // 2. LOGIC: Determine Status (NEVER BLOCK, JUST PENDING)
+        // 2. LOGIC: Determine Status
         let isVerified = false;
-        let verificationStatus = "pending"; // Default to pending
+        let verificationStatus = "pending";
         let institutionName = "";
-        let studentName = name; // Default to user input
+        let studentName = name;
         let verificationReason = "Manual Review Required";
 
-        // --- SCENARIO A: Perfect Match ---
         if (result.isValid && isNameMatch(name, result.name)) {
           isVerified = true;
           verificationStatus = "verified";
@@ -110,9 +136,7 @@ const Auth = () => {
           studentName = result.name;
           verificationReason = "Auto-verified by AI";
           toast.success("✅ ID Verified! Welcome.");
-        }
-        // --- SCENARIO B: Name Mismatch ---
-        else if (result.isValid && !isNameMatch(name, result.name)) {
+        } else if (result.isValid && !isNameMatch(name, result.name)) {
           isVerified = false;
           verificationStatus = "pending";
           verificationReason = `Name Mismatch: ID says '${result.name}'`;
@@ -120,9 +144,7 @@ const Auth = () => {
             icon: "⏳",
             duration: 5000,
           });
-        }
-        // --- SCENARIO C: AI Failed / Invalid / Blurry ---
-        else {
+        } else {
           isVerified = false;
           verificationStatus = "pending";
           verificationReason = result.reason || "AI could not read ID";
@@ -132,7 +154,7 @@ const Auth = () => {
           });
         }
 
-        // 3. Create Firebase Account (Even if pending)
+        // 3. Create Firebase Account
         const userCredential = await createUserWithEmailAndPassword(
           auth,
           email,
@@ -140,6 +162,16 @@ const Auth = () => {
         );
         const user = userCredential.user;
         const emailDomain = email.split("@")[1];
+
+        // Convert file to base64 if pending
+        let idImageBase64 = null;
+        if (verificationStatus === "pending") {
+          idImageBase64 = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.readAsDataURL(idFile);
+          });
+        }
 
         const newUserProfile = {
           uid: user.uid,
@@ -149,12 +181,25 @@ const Auth = () => {
           organization: institutionName || emailDomain,
           isVerified: isVerified,
           verificationStatus: verificationStatus,
-          verificationReason: verificationReason, // 🔥 Saved for Admin to see
+          verificationReason: verificationReason,
           studentName: studentName,
+          idCardImage: idImageBase64 || null,
           createdAt: serverTimestamp(),
         };
 
         await setDoc(doc(db, "users", user.uid), newUserProfile);
+
+        if (verificationStatus === "pending") {
+          await setDoc(doc(db, "admin_requests", user.uid), {
+            userId: user.uid,
+            status: "pending",
+            reason: verificationReason,
+            name: name,
+            email: email,
+            imageBase64: idImageBase64,
+            timestamp: serverTimestamp(),
+          });
+        }
 
         localStorage.setItem(
           "user",
@@ -243,34 +288,111 @@ const Auth = () => {
             />
           </div>
 
+          {/* 🔥 PASSWORD FIELD WITH TOGGLE + STRENGTH */}
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1 ml-1">
               Password
             </label>
-            <input
-              name="password"
-              type="password"
-              required
-              placeholder="••••••••"
-              className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500 transition-all placeholder:text-slate-300"
-              onChange={handleChange}
-            />
+            <div className="relative">
+              <input
+                name="password"
+                type={showPassword ? "text" : "password"}
+                required
+                placeholder="••••••••"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500 transition-all placeholder:text-slate-300 pr-12"
+                onChange={handleChange}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+
+            {/* STRENGTH BAR (Only for Signup) */}
+            {!isLogin && formData.password && (
+              <div className="mt-2 ml-1 animate-in fade-in slide-in-from-top-1 duration-300">
+                <div className="flex gap-1 h-1 mb-1">
+                  <div
+                    className={`flex-1 rounded-full transition-colors duration-300 ${
+                      passStrength.score >= 1
+                        ? passStrength.color
+                        : "bg-slate-200"
+                    }`}
+                  ></div>
+                  <div
+                    className={`flex-1 rounded-full transition-colors duration-300 ${
+                      passStrength.score >= 2
+                        ? passStrength.color
+                        : "bg-slate-200"
+                    }`}
+                  ></div>
+                  <div
+                    className={`flex-1 rounded-full transition-colors duration-300 ${
+                      passStrength.score >= 3
+                        ? passStrength.color
+                        : "bg-slate-200"
+                    }`}
+                  ></div>
+                </div>
+                <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-wider">
+                  <span
+                    className={`${
+                      passStrength.score > 0
+                        ? "text-slate-600"
+                        : "text-slate-400"
+                    }`}
+                  >
+                    Strength
+                  </span>
+                  <span
+                    className={`transition-colors duration-300 ${
+                      passStrength.score === 1
+                        ? "text-red-500"
+                        : passStrength.score === 2
+                        ? "text-yellow-500"
+                        : passStrength.score === 3
+                        ? "text-emerald-500"
+                        : "text-slate-300"
+                    }`}
+                  >
+                    {passStrength.label}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           {!isLogin && (
             <>
+              {/* 🔥 CONFIRM PASSWORD FIELD WITH TOGGLE */}
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1 ml-1">
                   Confirm Password
                 </label>
-                <input
-                  name="confirmPassword"
-                  type="password"
-                  required
-                  placeholder="••••••••"
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500 transition-all placeholder:text-slate-300"
-                  onChange={handleChange}
-                />
+                <div className="relative">
+                  <input
+                    name="confirmPassword"
+                    type={showConfirmPassword ? "text" : "password"}
+                    required
+                    placeholder="••••••••"
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500 transition-all placeholder:text-slate-300 pr-12"
+                    onChange={handleChange}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                  >
+                    {showConfirmPassword ? (
+                      <EyeOff size={18} />
+                    ) : (
+                      <Eye size={18} />
+                    )}
+                  </button>
+                </div>
               </div>
 
               <div className="pt-2">
