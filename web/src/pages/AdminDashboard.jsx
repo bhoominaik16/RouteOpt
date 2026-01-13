@@ -3,6 +3,7 @@ import { db } from "../firebase";
 import {
   collection,
   query,
+  where,
   orderBy,
   onSnapshot,
   updateDoc,
@@ -13,7 +14,6 @@ import {
   AreaChart,
   Area,
   XAxis,
-  YAxis,
   Tooltip,
   ResponsiveContainer,
   CartesianGrid,
@@ -22,7 +22,12 @@ import toast from "react-hot-toast";
 
 const AdminDashboard = () => {
   const [alerts, setAlerts] = useState([]);
+  const [pendingUsers, setPendingUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // 🔥 New: Selected User for Detailed Review Modal
+  const [selectedUser, setSelectedUser] = useState(null);
+
   const [stats, setStats] = useState({
     totalUsers: 0,
     activeRides: 0,
@@ -31,18 +36,26 @@ const AdminDashboard = () => {
   const [chartData, setChartData] = useState([]);
 
   useEffect(() => {
-    // 1. DYNAMIC SOS FEED (Your working logic restored)
+    // 1. SOS FEED
     const qAlerts = query(
       collection(db, "sos_alerts"),
       orderBy("timestamp", "desc")
     );
     const unsubAlerts = onSnapshot(qAlerts, (snapshot) => {
       setAlerts(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+
+    // 2. PENDING VERIFICATIONS LISTENER
+    const qPending = query(
+      collection(db, "users"),
+      where("verificationStatus", "==", "pending")
+    );
+    const unsubPending = onSnapshot(qPending, (snapshot) => {
+      setPendingUsers(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
       setLoading(false);
     });
 
-    // 2. INTEGRATED STATS (Users, Rides, CO2)
-    // Listen to Rides for dynamic CO2 and Active Ride count
+    // 3. STATS LISTENER
     const unsubRides = onSnapshot(collection(db, "rides"), (snapshot) => {
       let totalKm = 0;
       let activeCount = 0;
@@ -53,11 +66,9 @@ const AdminDashboard = () => {
         const distance = parseFloat(ride.distance || 0);
         totalKm += distance;
 
-        // Active parameter: rides currently ongoing
         if (["requested", "accepted", "ongoing"].includes(ride.status))
           activeCount++;
 
-        // Aggregate for Chart
         if (ride.createdAt) {
           const month = ride.createdAt
             .toDate()
@@ -81,17 +92,19 @@ const AdminDashboard = () => {
       );
     });
 
-    // Listen to Users for Total User count
     const unsubUsers = onSnapshot(collection(db, "users"), (snapshot) => {
       setStats((prev) => ({ ...prev, totalUsers: snapshot.size }));
     });
 
     return () => {
       unsubAlerts();
+      unsubPending();
       unsubRides();
       unsubUsers();
     };
   }, []);
+
+  // --- ACTIONS ---
 
   const resolveAlert = async (id, userName) => {
     try {
@@ -106,8 +119,34 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleApproveUser = async (uid, name) => {
+    try {
+      await updateDoc(doc(db, "users", uid), {
+        isVerified: true,
+        verificationStatus: "verified",
+      });
+      toast.success(`${name} Approved ✅`);
+      setSelectedUser(null); // Close modal
+    } catch (error) {
+      toast.error("Approval failed");
+    }
+  };
+
+  const handleRejectUser = async (uid, name) => {
+    if (!window.confirm("Are you sure you want to reject this user?")) return;
+    try {
+      await updateDoc(doc(db, "users", uid), {
+        verificationStatus: "rejected",
+      });
+      toast.success(`${name} Rejected ❌`);
+      setSelectedUser(null); // Close modal
+    } catch (error) {
+      toast.error("Rejection failed");
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8 font-sans antialiased text-slate-900">
+    <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8 font-sans antialiased text-slate-900 relative">
       <div className="max-w-7xl mx-auto">
         {/* HEADER */}
         <header className="mb-10 flex justify-between items-end">
@@ -116,7 +155,7 @@ const AdminDashboard = () => {
               Admin Dashboard
             </h1>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-              Real-time Security & Impact Monitor
+              Real-time Security & Identity Management
             </p>
           </div>
           <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-white rounded-xl shadow-sm border border-slate-100">
@@ -127,17 +166,19 @@ const AdminDashboard = () => {
           </div>
         </header>
 
-        {/* DYNAMIC STATS GRID */}
+        {/* STATS */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+          <StatCard
+            title="Pending IDs"
+            value={pendingUsers.length}
+            color={
+              pendingUsers.length > 0 ? "text-amber-500" : "text-slate-400"
+            }
+          />
           <StatCard
             title="Active SOS"
             value={alerts.filter((a) => a.status === "ACTIVE").length}
             color="text-red-600"
-          />
-          <StatCard
-            title="Total Users"
-            value={stats.totalUsers}
-            color="text-slate-800"
           />
           <StatCard
             title="Active Rides"
@@ -152,74 +193,120 @@ const AdminDashboard = () => {
         </div>
 
         <div className="grid lg:grid-cols-12 gap-8">
-          {/* EMERGENCY FEED (33% Width) */}
-          <div className="lg:col-span-5 space-y-4">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-              🚨 Security Feed{" "}
-              {loading && <span className="animate-spin text-sm">↻</span>}
-            </h3>
-            <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
-              {alerts.length === 0 ? (
-                <div className="p-12 text-center text-slate-400 bg-white rounded-[2rem] border-2 border-dashed border-slate-200">
-                  Network Clear
-                </div>
-              ) : (
-                alerts.map((alert) => (
-                  <div
-                    key={alert.id}
-                    className={`p-5 rounded-3xl border-l-8 shadow-sm transition-all ${
-                      alert.status === "ACTIVE"
-                        ? "bg-red-50 border-red-500"
-                        : "bg-white border-slate-200 opacity-60"
-                    }`}
-                  >
-                    <div className="flex justify-between items-start mb-2">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
-                          alert.status === "ACTIVE"
-                            ? "bg-red-600 text-white animate-pulse"
-                            : "bg-slate-100 text-slate-500"
-                        }`}
-                      >
-                        {alert.status}
-                      </span>
-                      <span className="text-[10px] font-bold text-slate-400">
-                        {alert.timestamp?.toDate().toLocaleTimeString() ||
-                          "Just now"}
-                      </span>
-                    </div>
-                    <h4 className="font-bold text-slate-900">
-                      {alert.userName}
-                    </h4>
-                    <p className="text-[10px] text-slate-500 mb-4 font-mono truncate">
-                      {alert.uid}
-                    </p>
-
-                    <div className="flex gap-2">
-                      <a
-                        href={`https://www.google.com/maps?q=${alert.location?.lat},${alert.location?.lng}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex-1 py-2 bg-white border border-slate-200 text-slate-600 text-[10px] font-bold rounded-xl text-center hover:bg-slate-50 transition"
-                      >
-                        VIEW MAP
-                      </a>
-                      {alert.status === "ACTIVE" && (
-                        <button
-                          onClick={() => resolveAlert(alert.id, alert.userName)}
-                          className="flex-1 py-2 bg-red-600 text-white text-[10px] font-black rounded-xl hover:bg-red-700 transition shadow-lg shadow-red-100"
-                        >
-                          DISPATCH
-                        </button>
-                      )}
-                    </div>
+          {/* LEFT: ACTIONS */}
+          <div className="lg:col-span-5 space-y-8">
+            {/* SOS FEED */}
+            <div>
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                🚨 Security Feed
+              </h3>
+              <div className="space-y-4 max-h-[40vh] overflow-y-auto pr-2 custom-scrollbar">
+                {alerts.length === 0 ? (
+                  <div className="p-8 text-center text-slate-400 bg-white rounded-[2rem] border-2 border-dashed border-slate-200 text-xs font-bold">
+                    No Active Emergencies
                   </div>
-                ))
-              )}
+                ) : (
+                  alerts.map((alert) => (
+                    <div
+                      key={alert.id}
+                      className={`p-5 rounded-3xl border-l-8 shadow-sm transition-all ${
+                        alert.status === "ACTIVE"
+                          ? "bg-red-50 border-red-500"
+                          : "bg-white border-slate-200 opacity-60"
+                      }`}
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                            alert.status === "ACTIVE"
+                              ? "bg-red-600 text-white animate-pulse"
+                              : "bg-slate-100 text-slate-500"
+                          }`}
+                        >
+                          {alert.status}
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-400">
+                          {alert.timestamp?.toDate().toLocaleTimeString()}
+                        </span>
+                      </div>
+                      <h4 className="font-bold text-slate-900">
+                        {alert.userName}
+                      </h4>
+                      <div className="flex gap-2 mt-4">
+                        <a
+                          href={`https://www.google.com/maps?q=${alert.location?.lat},${alert.location?.lng}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex-1 py-2 bg-white border border-slate-200 text-slate-600 text-[10px] font-bold rounded-xl text-center hover:bg-slate-50 transition"
+                        >
+                          VIEW MAP
+                        </a>
+                        {alert.status === "ACTIVE" && (
+                          <button
+                            onClick={() =>
+                              resolveAlert(alert.id, alert.userName)
+                            }
+                            className="flex-1 py-2 bg-red-600 text-white text-[10px] font-black rounded-xl hover:bg-red-700 transition shadow-lg shadow-red-100"
+                          >
+                            DISPATCH
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* 🔥 PENDING VERIFICATIONS LIST */}
+            <div>
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                🆔 Verification Queue{" "}
+                <span className="text-amber-500">({pendingUsers.length})</span>
+              </h3>
+              <div className="space-y-4 max-h-[40vh] overflow-y-auto pr-2 custom-scrollbar">
+                {pendingUsers.length === 0 ? (
+                  <div className="p-8 text-center text-slate-400 bg-white rounded-[2rem] border-2 border-dashed border-slate-200 text-xs font-bold">
+                    All Users Verified
+                  </div>
+                ) : (
+                  pendingUsers.map((user) => (
+                    <div
+                      key={user.id}
+                      className="bg-white p-5 rounded-3xl shadow-sm border border-amber-100 relative overflow-hidden"
+                    >
+                      <div className="absolute top-0 right-0 w-12 h-12 bg-amber-50 rounded-bl-full z-0"></div>
+                      <div className="relative z-10">
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-lg font-bold">
+                            {user.name?.[0]}
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-slate-900 text-sm">
+                              {user.name}
+                            </h4>
+                            <p className="text-[10px] text-slate-500 font-mono">
+                              {user.email}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Review Button */}
+                        <button
+                          onClick={() => setSelectedUser(user)}
+                          className="w-full mt-2 py-2.5 bg-slate-900 text-white text-[10px] font-bold rounded-xl hover:bg-slate-800 transition shadow-md"
+                        >
+                          REVIEW DETAILS 🔍
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
 
-          {/* ANALYTICS TRENDS (66% Width) */}
+          {/* RIGHT: ANALYTICS */}
           <div className="lg:col-span-7 space-y-6">
             <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden">
               <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-8">
@@ -288,28 +375,93 @@ const AdminDashboard = () => {
 
             <div className="bg-slate-900 p-6 rounded-[2rem] text-white">
               <h4 className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-2">
-                Protocol Note
+                System Log
               </h4>
               <p className="text-xs text-slate-400 leading-relaxed font-medium">
-                All SOS alerts include user UID and verified email. Dispatching
-                sends an immediate broadcast to local security units and logs
-                the event for campus audit.
+                Admin actions are permanent. Please verify the email domain
+                matches the institution before approving pending requests
+                manually.
               </p>
             </div>
           </div>
         </div>
       </div>
+
+      {/* 🔥 DETAILS MODAL */}
+      {selectedUser && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-[2rem] p-8 max-w-md w-full shadow-2xl relative">
+            <button
+              onClick={() => setSelectedUser(null)}
+              className="absolute top-6 right-6 text-slate-400 hover:text-slate-600"
+            >
+              ✕
+            </button>
+
+            <h2 className="text-xl font-black text-slate-900 mb-6 uppercase tracking-tighter italic">
+              Verification Review
+            </h2>
+
+            <div className="space-y-4 mb-8">
+              <DetailRow label="Registered Name" value={selectedUser.name} />
+              <DetailRow label="Institution Email" value={selectedUser.email} />
+              <DetailRow
+                label="ID Detected Name"
+                value={selectedUser.studentName || "N/A (AI Failed)"}
+              />
+              <DetailRow
+                label="Institution"
+                value={selectedUser.organization || "Unknown"}
+              />
+              <div className="bg-amber-50 p-3 rounded-xl border border-amber-100">
+                <p className="text-[10px] font-bold text-amber-600 uppercase">
+                  Reason for Pending
+                </p>
+                <p className="text-xs text-amber-800 mt-1">
+                  AI could not confidently match the Name or Institution. Please
+                  check if the Email Domain matches the Institution manually.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() =>
+                  handleApproveUser(selectedUser.id, selectedUser.name)
+                }
+                className="py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition shadow-lg shadow-emerald-200 text-sm"
+              >
+                ✅ APPROVE
+              </button>
+              <button
+                onClick={() =>
+                  handleRejectUser(selectedUser.id, selectedUser.name)
+                }
+                className="py-3 bg-white border-2 border-slate-100 text-slate-500 hover:border-red-100 hover:text-red-500 font-bold rounded-xl transition text-sm"
+              >
+                ❌ REJECT
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-// Internal reusable card component
 const StatCard = ({ title, value, color }) => (
   <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
       {title}
     </p>
     <h3 className={`text-3xl font-black mt-1 ${color}`}>{value}</h3>
+  </div>
+);
+
+const DetailRow = ({ label, value }) => (
+  <div className="flex justify-between items-center border-b border-slate-50 pb-2">
+    <span className="text-xs font-bold text-slate-400 uppercase">{label}</span>
+    <span className="text-sm font-bold text-slate-900">{value}</span>
   </div>
 );
 
