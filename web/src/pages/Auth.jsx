@@ -14,11 +14,12 @@ import { auth, db } from "../firebase";
 // 🔥 Import the new Frontend ID Service
 import { verifyIDCard } from "../services/gemini";
 
-const Auth = () => {
+const Auth = ({ setUser }) => {
   const navigate = useNavigate();
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [idFile, setIdFile] = useState(null);
+  const [loginRole, setLoginRole] = useState("user"); // 🔥 Handles role selection
 
   // 👁️ Password Visibility State
   const [showPassword, setShowPassword] = useState(false);
@@ -85,18 +86,31 @@ const Auth = () => {
           email,
           password
         );
-        const user = userCredential.user;
+        const userAuth = userCredential.user;
 
-        const userDocRef = doc(db, "users", user.uid);
+        const userDocRef = doc(db, "users", userAuth.uid);
         const userDocSnap = await getDoc(userDocRef);
 
         if (userDocSnap.exists()) {
           const userData = userDocSnap.data();
+
+          // 🔥 RBAC CHECK: Verify database role matches dropdown selection
+          if (loginRole === "admin" && userData.role !== "admin") {
+            throw new Error("Access Denied: You do not have Admin privileges.");
+          }
+
           localStorage.setItem("user", JSON.stringify(userData));
-          toast.success("Logged in successfully");
-          navigate("/");
+          if (setUser) setUser(userData); // Sync global App state
+          
+          toast.success(`Logged in as ${loginRole}`);
+          
+          if (userData.role === "admin" && loginRole === "admin") {
+            navigate("/admin");
+          } else {
+            navigate("/");
+          }
         } else {
-          toast.error("User data not found.");
+          toast.error("User data profile not found in database.");
         }
       }
 
@@ -108,7 +122,6 @@ const Auth = () => {
           throw new Error("Passwords do not match");
         }
         if (passStrength.score < 2) {
-          // Enforce at least Medium strength
           throw new Error("Password is too weak. Please make it stronger.");
         }
         if (!idFile) {
@@ -160,7 +173,7 @@ const Auth = () => {
           email,
           password
         );
-        const user = userCredential.user;
+        const userAuth = userCredential.user;
         const emailDomain = email.split("@")[1];
 
         // Convert file to base64 if pending
@@ -174,7 +187,7 @@ const Auth = () => {
         }
 
         const newUserProfile = {
-          uid: user.uid,
+          uid: userAuth.uid,
           name,
           email,
           gender,
@@ -184,14 +197,15 @@ const Auth = () => {
           verificationReason: verificationReason,
           studentName: studentName,
           idCardImage: idImageBase64 || null,
+          role: "user", // New accounts are always users by default
           createdAt: serverTimestamp(),
         };
 
-        await setDoc(doc(db, "users", user.uid), newUserProfile);
+        await setDoc(doc(db, "users", userAuth.uid), newUserProfile);
 
         if (verificationStatus === "pending") {
-          await setDoc(doc(db, "admin_requests", user.uid), {
-            userId: user.uid,
+          await setDoc(doc(db, "admin_requests", userAuth.uid), {
+            userId: userAuth.uid,
             status: "pending",
             reason: verificationReason,
             name: name,
@@ -208,6 +222,8 @@ const Auth = () => {
             createdAt: new Date().toISOString(),
           })
         );
+
+        if (setUser) setUser(newUserProfile); // 🔥 Sync state for Navbar/Protected Routes
 
         toast.success("Account created successfully!");
         navigate("/");
@@ -228,14 +244,31 @@ const Auth = () => {
           <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">
             {isLogin ? "Welcome Back" : "Create Account"}
           </h2>
-          <p className="text-slate-500 mt-2">
+          <p className="text-slate-500 mt-2 text-sm">
             {isLogin
-              ? "Enter your credentials"
+              ? "Select login type and enter credentials"
               : "Institutional Verification Required"}
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* 🔥 ROLE SELECTION DROPDOWN (Login Only) */}
+          {isLogin && (
+            <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+              <label className="block text-sm font-semibold text-slate-700 mb-1 ml-1">
+                Login As
+              </label>
+              <select
+                value={loginRole}
+                onChange={(e) => setLoginRole(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500 bg-white transition-all text-slate-700 font-medium"
+              >
+                <option value="user">User / Student</option>
+                <option value="admin">Administrator</option>
+              </select>
+            </div>
+          )}
+
           {!isLogin && (
             <>
               <div>
@@ -288,7 +321,6 @@ const Auth = () => {
             />
           </div>
 
-          {/* 🔥 PASSWORD FIELD WITH TOGGLE + STRENGTH */}
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1 ml-1">
               Password
@@ -311,7 +343,6 @@ const Auth = () => {
               </button>
             </div>
 
-            {/* STRENGTH BAR (Only for Signup) */}
             {!isLogin && formData.password && (
               <div className="mt-2 ml-1 animate-in fade-in slide-in-from-top-1 duration-300">
                 <div className="flex gap-1 h-1 mb-1">
@@ -367,7 +398,6 @@ const Auth = () => {
 
           {!isLogin && (
             <>
-              {/* 🔥 CONFIRM PASSWORD FIELD WITH TOGGLE */}
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1 ml-1">
                   Confirm Password

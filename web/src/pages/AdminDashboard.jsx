@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { db } from "../firebase";
+import { db, auth } from "../firebase"; // 🔥 Added auth import
+import { signOut } from "firebase/auth"; // 🔥 Added signOut import
+import { useNavigate } from "react-router-dom"; // 🔥 Added for redirection
 import {
   collection,
   query,
@@ -21,11 +23,12 @@ import {
 import toast from "react-hot-toast";
 
 const AdminDashboard = () => {
+  const navigate = useNavigate(); // 🔥 Hook for redirection
   const [alerts, setAlerts] = useState([]);
   const [pendingUsers, setPendingUsers] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // 🔥 New: Selected User for Detailed Review Modal
+  // 🔥 Selected User for Detailed Review Modal
   const [selectedUser, setSelectedUser] = useState(null);
 
   const [stats, setStats] = useState({
@@ -34,6 +37,19 @@ const AdminDashboard = () => {
     totalCo2Saved: "0.0",
   });
   const [chartData, setChartData] = useState([]);
+
+  // 🔥 Logout Function
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      localStorage.removeItem("user"); // Clear local storage session
+      toast.success("Admin logged out successfully");
+      navigate("/auth"); // Redirect to login page
+    } catch (error) {
+      console.error("Logout error:", error);
+      toast.error("Failed to log out");
+    }
+  };
 
   useEffect(() => {
     // 1. SOS FEED
@@ -149,7 +165,7 @@ const AdminDashboard = () => {
     <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8 font-sans antialiased text-slate-900 relative">
       <div className="max-w-7xl mx-auto">
         {/* HEADER */}
-        <header className="mb-10 flex justify-between items-end">
+        <header className="mb-10 flex justify-between items-start">
           <div>
             <h1 className="text-2xl font-black uppercase tracking-tighter italic">
               Admin Dashboard
@@ -158,11 +174,22 @@ const AdminDashboard = () => {
               Real-time Security & Identity Management
             </p>
           </div>
-          <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-white rounded-xl shadow-sm border border-slate-100">
-            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-            <span className="text-[10px] font-black uppercase tracking-wider">
-              System: Secure
-            </span>
+
+          <div className="flex items-center gap-4">
+            <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-white rounded-xl shadow-sm border border-slate-100">
+              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+              <span className="text-[10px] font-black uppercase tracking-wider">
+                System: Secure
+              </span>
+            </div>
+            
+            {/* 🔥 LOGOUT BUTTON */}
+            <button
+              onClick={handleLogout}
+              className="px-5 py-2.5 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-red-600 transition-all shadow-lg active:scale-95"
+            >
+              Log Out
+            </button>
           </div>
         </header>
 
@@ -433,25 +460,22 @@ const AdminDashboard = () => {
                 <DetailRow label="Email" value={selectedUser.email} />
               </div>
 
-              {/* 🤖 AI DETECTED DATA (Corrected) */}
+              {/* 🤖 AI DETECTED DATA */}
               <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-100">
                 <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">
                   AI Analysis
                 </p>
 
-                {/* 1. Name detected on ID */}
                 <DetailRow
                   label="Name on ID"
                   value={selectedUser.studentName || "Not Detected"}
                 />
 
-                {/* 2. Institution detected on ID (Uses new field if available) */}
                 <DetailRow
                   label="Institution on ID"
                   value={selectedUser.aiInstitution || "Not Detected"}
                 />
 
-                {/* 3. AI Confidence / Status */}
                 <div className="flex justify-between items-center pt-2 mt-1 border-t border-emerald-100">
                   <span className="text-xs font-bold text-slate-400 uppercase">
                     Match Status
