@@ -176,11 +176,6 @@ const Profile = () => {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("user");
-    navigate("/");
-  };
-
   if (!user)
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -302,13 +297,6 @@ const Profile = () => {
                   />
                 </button>
               </div>
-
-              <button
-                onClick={handleLogout}
-                className="w-full mt-4 py-2 px-4 bg-red-50 text-red-600 text-xs font-bold rounded-xl hover:bg-red-100 transition-colors"
-              >
-                Log Out
-              </button>
             </div>
           </div>
 

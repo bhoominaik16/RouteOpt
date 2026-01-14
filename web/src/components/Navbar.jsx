@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { auth } from "../firebase";
+import { auth, db } from "../firebase"; // 🔥 Added db import
+import { doc, getDoc } from "firebase/firestore"; // 🔥 Added Firestore imports
 import toast from "react-hot-toast";
 
 const Navbar = () => {
@@ -9,47 +10,48 @@ const Navbar = () => {
   const [showDropdown, setShowDropdown] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [user, setUser] = useState(null);
-
-  // We need a local state for the image/name because Profile saves to localStorage
-  const [localData, setLocalData] = useState(
-    JSON.parse(localStorage.getItem("user"))
-  );
+  // We will use this state to store the full user profile from Firestore
+  const [userData, setUserData] = useState(null);
 
   const dropdownRef = useRef(null);
 
-  // 1. Listen for Firebase Auth (Login Status)
+  // 1. 🔥 Listen for Auth Changes AND Fetch User Profile Data 🔥
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
+
+      if (currentUser) {
+        // User is logged in, fetch their profile data from Firestore immediately
+        try {
+          const userDocRef = doc(db, "users", currentUser.uid);
+          const userDocSnap = await getDoc(userDocRef);
+
+          if (userDocSnap.exists()) {
+            const data = userDocSnap.data();
+            setUserData(data);
+            // Optional: Keep localStorage synced for other components
+            localStorage.setItem("user", JSON.stringify(data));
+          } else {
+            // Handle rare case where auth exists but Firestore doc doesn't
+            setUserData(null);
+          }
+        } catch (error) {
+          console.error("Error fetching user data in Navbar:", error);
+          setUserData(null);
+        }
+      } else {
+        // User logged out
+        setUserData(null);
+        localStorage.removeItem("user");
+      }
     });
     return () => unsubscribe();
-  }, []);
-
-  // 2. Listen for Profile Updates (The Sync Fix)
-  useEffect(() => {
-    const syncLocalData = () => {
-      const savedUser = JSON.parse(localStorage.getItem("user"));
-      if (savedUser) {
-        setLocalData(savedUser);
-      }
-    };
-
-    window.addEventListener("userUpdated", syncLocalData);
-    window.addEventListener("storage", syncLocalData);
-
-    return () => {
-      window.removeEventListener("userUpdated", syncLocalData);
-      window.removeEventListener("storage", syncLocalData);
-    };
   }, []);
 
   const handleLogout = async () => {
     try {
       await signOut(auth);
-      localStorage.removeItem("user");
-      setLocalData(null);
-      window.dispatchEvent(new Event("userUpdated"));
-
+      // State updates are now handled in the onAuthStateChanged listener above
       toast.success("Logged out successfully");
       setShowDropdown(false);
       setIsMobileMenuOpen(false);
@@ -71,8 +73,8 @@ const Navbar = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // 🔥 Helper to check if verified
-  const isVerified = localData?.isVerified === true;
+  // 🔥 Helper to check if verified using the fresh Firestore data
+  const isVerified = userData?.isVerified === true;
 
   return (
     <nav className="sticky top-0 z-[1000] bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border-b-4 border-emerald-500 px-4 md:px-8 py-4 shadow-2xl">
@@ -120,15 +122,15 @@ const Navbar = () => {
                   className="flex items-center gap-2 p-1 hover:bg-slate-100 rounded-full transition outline-none"
                 >
                   <div className="w-9 h-9 rounded-full flex items-center justify-center text-slate-900 font-bold uppercase border-2 border-emerald-400 overflow-hidden bg-emerald-50">
-                    {localData?.profileImage ? (
+                    {userData?.profileImage ? (
                       <img
-                        src={localData.profileImage}
+                        src={userData.profileImage}
                         alt="User"
                         className="w-full h-full object-cover"
                       />
                     ) : (
                       <span>
-                        {localData?.name ? localData.name[0] : user.email?.[0]}
+                        {userData?.name ? userData.name[0] : user.email?.[0]}
                       </span>
                     )}
                   </div>
@@ -156,7 +158,7 @@ const Navbar = () => {
                         Signed in as
                       </p>
                       <p className="text-sm font-bold text-slate-800 truncate">
-                        {localData?.name || "User"}
+                        {userData?.name || "User"}
                       </p>
                       <p className="text-xs text-slate-500 truncate">
                         {user.email}

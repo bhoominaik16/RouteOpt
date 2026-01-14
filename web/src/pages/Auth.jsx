@@ -1,9 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import { Eye, EyeOff } from "lucide-react"; // 🔥 Icons for toggle
+import { Eye, EyeOff } from "lucide-react";
 
-// 🔥 Firebase Imports
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -11,7 +10,6 @@ import {
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "../firebase";
 
-// 🔥 Import the new Frontend ID Service
 import { verifyIDCard } from "../services/gemini";
 
 const Auth = ({ setUser }) => {
@@ -19,11 +17,12 @@ const Auth = ({ setUser }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [idFile, setIdFile] = useState(null);
-  const [loginRole, setLoginRole] = useState("user"); // 🔥 Handles role selection
+  const [loginRole, setLoginRole] = useState("user");
 
-  // 👁️ Password Visibility State
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  const MASTER_ADMIN_EMAIL = "admin@email.com";
 
   const [formData, setFormData] = useState({
     name: "",
@@ -33,11 +32,23 @@ const Auth = ({ setUser }) => {
     confirmPassword: "",
   });
 
+  // LOGIC 3: Auto-fill / Clear Credentials based on role and mode
+  useEffect(() => {
+    // Always clear the form data when switching roles or login/signup mode
+    setFormData({
+      name: "",
+      email: "",
+      gender: "",
+      password: "",
+      confirmPassword: "",
+    });
+  }, [isLogin, loginRole]);
+
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  // 🧠 LOGIC 1: Fuzzy Name Matching
+  // LOGIC 1: Fuzzy Name Matching
   const isNameMatch = (inputName, extractedName) => {
     if (!extractedName) return false;
     const cleanInput = inputName.toLowerCase().replace(/[^a-z]/g, "");
@@ -47,7 +58,7 @@ const Auth = ({ setUser }) => {
     );
   };
 
-  // 🧠 LOGIC 2: Password Strength Calculator
+  // LOGIC 2: Password Strength Calculator
   const getPasswordStrength = (pass) => {
     if (!pass) return { score: 0, label: "", color: "bg-slate-200" };
 
@@ -78,7 +89,7 @@ const Auth = ({ setUser }) => {
 
     try {
       // ===========================
-      // 🔐 LOGIN LOGIC
+      // LOGIN LOGIC
       // ===========================
       if (isLogin) {
         const userCredential = await signInWithEmailAndPassword(
@@ -94,16 +105,23 @@ const Auth = ({ setUser }) => {
         if (userDocSnap.exists()) {
           const userData = userDocSnap.data();
 
-          // 🔥 RBAC CHECK: Verify database role matches dropdown selection
-          if (loginRole === "admin" && userData.role !== "admin") {
-            throw new Error("Access Denied: You do not have Admin privileges.");
+          // RBAC CHECK: STRICT ADMIN Check
+          if (loginRole === "admin") {
+            if (
+              userData.role !== "admin" ||
+              userAuth.email !== MASTER_ADMIN_EMAIL
+            ) {
+              throw new Error(
+                "Access Denied: You do not have Admin privileges."
+              );
+            }
           }
 
           localStorage.setItem("user", JSON.stringify(userData));
           if (setUser) setUser(userData); // Sync global App state
-          
+
           toast.success(`Logged in as ${loginRole}`);
-          
+
           if (userData.role === "admin" && loginRole === "admin") {
             navigate("/admin");
           } else {
@@ -115,7 +133,7 @@ const Auth = ({ setUser }) => {
       }
 
       // ===========================
-      // 📝 SIGNUP LOGIC (Serverless)
+      // SIGNUP LOGIC (Serverless)
       // ===========================
       else {
         if (password !== confirmPassword) {
@@ -223,7 +241,7 @@ const Auth = ({ setUser }) => {
           })
         );
 
-        if (setUser) setUser(newUserProfile); // 🔥 Sync state for Navbar/Protected Routes
+        if (setUser) setUser(newUserProfile); // Sync state for Navbar/Protected Routes
 
         toast.success("Account created successfully!");
         navigate("/");
@@ -252,7 +270,7 @@ const Auth = ({ setUser }) => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* 🔥 ROLE SELECTION DROPDOWN (Login Only) */}
+          {/* ROLE SELECTION DROPDOWN (Login Only) */}
           {isLogin && (
             <div className="animate-in fade-in slide-in-from-top-2 duration-300">
               <label className="block text-sm font-semibold text-slate-700 mb-1 ml-1">
@@ -318,6 +336,7 @@ const Auth = ({ setUser }) => {
               placeholder="name@university.edu"
               className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500 transition-all placeholder:text-slate-300"
               onChange={handleChange}
+              value={formData.email}
             />
           </div>
 
@@ -333,6 +352,7 @@ const Auth = ({ setUser }) => {
                 placeholder="••••••••"
                 className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500 transition-all placeholder:text-slate-300 pr-12"
                 onChange={handleChange}
+                value={formData.password}
               />
               <button
                 type="button"
