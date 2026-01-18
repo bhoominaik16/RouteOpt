@@ -261,7 +261,7 @@ const AdminDashboard = () => {
                       </h4>
                       <div className="flex gap-2 mt-4">
                         <a
-                          href={`http://googleusercontent.com/maps.google.com/3{alert.location?.lat},${alert.location?.lng}`}
+                          href={`https://www.google.com/maps/search/?api=1&query=${alert.location?.lat},${alert.location?.lng}`}
                           target="_blank"
                           rel="noreferrer"
                           className="flex-1 py-2 bg-white border border-slate-200 text-slate-600 text-[10px] font-bold rounded-xl text-center hover:bg-slate-50 transition"

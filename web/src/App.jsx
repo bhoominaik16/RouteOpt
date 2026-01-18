@@ -26,6 +26,7 @@ import RideDetails from "./pages/RideDetails";
 import RideGiverDashboard from "./pages/RideGiverDashboard";
 import SOSButton from "./components/SOSButton";
 import AdminDashboard from "./pages/AdminDashboard";
+import RideTakerLiveView from "./pages/RideTakerLiveView";
 
 ReactGA.initialize("G-DGMYLY6844");
 
@@ -34,11 +35,8 @@ const VerifiedRoute = ({ user, children }) => {
   if (!user) return <Navigate to="/auth" replace />;
 
   // 2. 🔥 NEW: Must have Email Verified (Skip check for admins)
-  // We check auth.currentUser because localStorage might be stale regarding emailVerified status
   const firebaseUser = auth.currentUser;
   if (firebaseUser && !firebaseUser.emailVerified && user.role !== "admin") {
-    // Allow them to stay on Profile to perhaps resend email, or redirect to Auth
-    // For now, let's redirect to Auth with a toast
     toast.error("Please verify your email address first.");
     return <Navigate to="/auth" replace />;
   }
@@ -56,7 +54,6 @@ const VerifiedRoute = ({ user, children }) => {
   return children;
 };
 
-// 👑 ADMIN GUARD
 const AdminRoute = ({ user, children }) => {
   const localUser = JSON.parse(localStorage.getItem("user"));
   const currentUser = user || localUser;
@@ -79,7 +76,7 @@ function App() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // 🔥 1. LISTENER: Handle "userUpdated" Event (From Profile updates)
+  // 🔥 1. LISTENER: Handle "userUpdated" Event
   useEffect(() => {
     const handleUserUpdate = () => {
       const updatedUser = JSON.parse(localStorage.getItem("user"));
@@ -96,8 +93,6 @@ function App() {
       if (firebaseUser) {
         // Enforce Email Verification Globally
         if (!firebaseUser.emailVerified && user?.role !== "admin") {
-          // If they are logged in but email isn't verified, kick them out
-          // (Unless they are currently on the Auth page waiting)
           if (!location.pathname.includes("/auth")) {
             setUser(null);
             localStorage.removeItem("user");
@@ -106,7 +101,6 @@ function App() {
           }
         }
       } else {
-        // If Firebase says logged out, clear local state
         if (user) {
           setUser(null);
           localStorage.removeItem("user");
@@ -116,7 +110,7 @@ function App() {
     return () => unsubscribe();
   }, [user, navigate, location]);
 
-  // Sync state on route change (Legacy support)
+  // Sync state on route change
   useEffect(() => {
     const loggedInUser = JSON.parse(localStorage.getItem("user"));
     if (JSON.stringify(loggedInUser) !== JSON.stringify(user)) {
@@ -137,6 +131,7 @@ function App() {
           <Route path="/profile" element={<Profile />} />
           <Route path="/history" element={<RideHistory />} />
 
+          {/* 🔥 MERGED ROUTES: Concise format + New Live View */}
           <Route
             path="/ride-selection"
             element={
@@ -178,6 +173,9 @@ function App() {
             }
           />
 
+          {/* New Route from merge */}
+          <Route path="/live/:rideId" element={<RideTakerLiveView />} />
+
           {/* 🔥 PROTECTED ADMIN ROUTE */}
           <Route
             path="/admin"
@@ -196,3 +194,4 @@ function App() {
 }
 
 export default App;
+git

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { db } from "../firebase";
-/* Added doc, updateDoc, and getDoc to handle global User UPI */
 import {
   collection,
   query,
@@ -14,6 +14,7 @@ import QRCode from "react-qr-code";
 import toast from "react-hot-toast";
 
 const RideHistory = () => {
+  const navigate = useNavigate();
   const [user] = useState(() => JSON.parse(localStorage.getItem("user")));
   const [activeTab, setActiveTab] = useState("taker");
 
@@ -22,20 +23,17 @@ const RideHistory = () => {
 
   const [payModalData, setPayModalData] = useState(null);
 
-  // 🔥 Cost Calculation Helper
   const getDynamicCost = (distance) => {
     const dist = parseFloat(distance || 0);
     return Math.round(20 + dist * 10);
   };
 
-  /* 🔥 GLOBAL SETTING: Saves UPI to the DRIVER'S profile (Set once for all rides) */
   const handleUpdateGlobalUPI = async (upiId) => {
     if (!upiId) return toast.error("Please enter a UPI ID");
     try {
       const userRef = doc(db, "users", user.uid);
       await updateDoc(userRef, { driverUpi: upiId });
 
-      // Update local state and storage so the driver sees their saved ID
       const updatedUser = { ...user, driverUpi: upiId };
       localStorage.setItem("user", JSON.stringify(updatedUser));
 
@@ -46,10 +44,8 @@ const RideHistory = () => {
     }
   };
 
-  /* 🔥 SYNC LOGIC: Fetches the unique UPI of the specific DRIVER for this ride */
   const handlePassengerPay = async (req) => {
     try {
-      // Get the driver's unique profile using the driverId from the request
       const driverRef = doc(db, "users", req.driverId);
       const driverSnap = await getDoc(driverRef);
 
@@ -61,7 +57,7 @@ const RideHistory = () => {
       setPayModalData({
         ...req,
         fare,
-        driverUpi: driverUpi, // Now pulls the unique UPI for THIS driver
+        driverUpi: driverUpi, 
       });
     } catch (error) {
       console.error("Error fetching Driver UPI:", error);
@@ -69,7 +65,6 @@ const RideHistory = () => {
     }
   };
 
-  // 1. Fetch Requests (Passenger View)
   useEffect(() => {
     if (!user) return;
     const q = query(
@@ -82,7 +77,6 @@ const RideHistory = () => {
     return () => unsub();
   }, [user]);
 
-  // 2. Fetch Posted Rides (Driver View)
   useEffect(() => {
     if (!user) return;
     const q = query(collection(db, "rides"), where("driverId", "==", user.uid));
@@ -122,7 +116,6 @@ const RideHistory = () => {
           </button>
         </div>
 
-        {/* 🔥 NEW: Driver's Personal Payment Setup (Shows only once at top of Driver tab) */}
         {activeTab === "giver" && (
           <div className="bg-emerald-900 text-white p-6 rounded-2xl mb-8 shadow-xl border border-emerald-700 flex flex-col md:flex-row justify-between items-center gap-4">
             <div>
@@ -154,7 +147,6 @@ const RideHistory = () => {
         )}
 
         <div className="space-y-4">
-          {/* --- PASSENGER VIEW --- */}
           {activeTab === "taker" &&
             (requests.length === 0 ? (
               <p className="text-slate-400 italic">No ride requests found.</p>
@@ -189,19 +181,29 @@ const RideHistory = () => {
                     </p>
                   </div>
 
+                  <div className="flex flex-wrap gap-2 justify-end">
                   {req.status === "ACCEPTED" && (
-                    <button
-                      onClick={() => handlePassengerPay(req)}
-                      className="px-6 py-3 bg-emerald-600 text-white font-bold rounded-xl shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition flex items-center gap-2"
-                    >
-                      <span>💸</span> Pay Fare
-                    </button>
+                    <>
+                      <button
+                        onClick={() => navigate(`/live/${req.rideId}`)}
+                        className="px-5 py-3 bg-slate-900 text-white font-bold rounded-xl shadow-sm hover:bg-slate-800 transition flex items-center gap-2 text-sm animate-pulse"
+                      >
+                        <span>🔴</span> Live Track
+                      </button>
+
+                      <button
+                        onClick={() => handlePassengerPay(req)}
+                        className="px-5 py-3 bg-emerald-600 text-white font-bold rounded-xl shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition flex items-center gap-2 text-sm"
+                      >
+                        <span>💸</span> Pay Fare
+                      </button>
+                    </>
                   )}
                 </div>
+              </div>
               ))
             ))}
 
-          {/* --- DRIVER VIEW --- */}
           {activeTab === "giver" &&
             (postedRides.length === 0 ? (
               <p className="text-slate-400 italic">
@@ -233,7 +235,6 @@ const RideHistory = () => {
         </div>
       </div>
 
-      {/* 💰 PAYMENT MODAL */}
       {payModalData && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl p-8 max-sm w-full shadow-2xl relative">
@@ -260,7 +261,6 @@ const RideHistory = () => {
 
               <div className="bg-white p-4 rounded-2xl border-2 border-slate-900 inline-block shadow-inner mb-6">
                 <QRCode
-                  /* Uses the unique UPI ID fetched from the specific Driver's profile */
                   value={`upi://pay?pa=${
                     payModalData.driverUpi || "merchant@upi"
                   }&pn=${payModalData.driverName}&am=${
