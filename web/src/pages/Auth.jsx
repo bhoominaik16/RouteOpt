@@ -6,6 +6,7 @@ import { Eye, EyeOff } from "lucide-react";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  sendEmailVerification,
 } from "firebase/auth";
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "../firebase";
@@ -18,6 +19,9 @@ const Auth = ({ setUser }) => {
   const [loading, setLoading] = useState(false);
   const [idFile, setIdFile] = useState(null);
   const [loginRole, setLoginRole] = useState("user");
+
+  // 🔥 NEW: State to hold the user on the "Check Email" screen
+  const [awaitingVerification, setAwaitingVerification] = useState(false);
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -32,9 +36,40 @@ const Auth = ({ setUser }) => {
     confirmPassword: "",
   });
 
+  // 🔥 NEW: Auto-Login Polling Logic
+  useEffect(() => {
+    let interval;
+    if (awaitingVerification && auth.currentUser) {
+      interval = setInterval(async () => {
+        try {
+          await auth.currentUser.reload(); // Refresh Auth state from Firebase server
+
+          if (auth.currentUser.emailVerified) {
+            clearInterval(interval);
+
+            // User Verified! Fetch data and log them in.
+            const userDocRef = doc(db, "users", auth.currentUser.uid);
+            const userDocSnap = await getDoc(userDocRef);
+
+            if (userDocSnap.exists()) {
+              const userData = userDocSnap.data();
+              localStorage.setItem("user", JSON.stringify(userData));
+              if (setUser) setUser(userData);
+
+              toast.success("🎉 Email Verified! Logging you in...");
+              navigate("/");
+            }
+          }
+        } catch (error) {
+          console.error("Polling error", error);
+        }
+      }, 3000); // Check every 3 seconds
+    }
+    return () => clearInterval(interval);
+  }, [awaitingVerification, navigate, setUser]);
+
   // LOGIC 3: Auto-fill / Clear Credentials based on role and mode
   useEffect(() => {
-    // Always clear the form data when switching roles or login/signup mode
     setFormData({
       name: "",
       email: "",
@@ -95,9 +130,17 @@ const Auth = ({ setUser }) => {
         const userCredential = await signInWithEmailAndPassword(
           auth,
           email,
-          password
+          password,
         );
         const userAuth = userCredential.user;
+
+        // 🔥 Change: Strict Email Verification Check
+        if (!userAuth.emailVerified && loginRole !== "admin") {
+          await auth.signOut();
+          throw new Error(
+            "Please verify your email address before logging in.",
+          );
+        }
 
         const userDocRef = doc(db, "users", userAuth.uid);
         const userDocSnap = await getDoc(userDocRef);
@@ -112,7 +155,7 @@ const Auth = ({ setUser }) => {
               userAuth.email !== MASTER_ADMIN_EMAIL
             ) {
               throw new Error(
-                "Access Denied: You do not have Admin privileges."
+                "Access Denied: You do not have Admin privileges.",
               );
             }
           }
@@ -147,11 +190,20 @@ const Auth = ({ setUser }) => {
         }
 
         // 1. Verify ID (Direct Frontend Call)
-        toast.loading("Scanning ID Card...", { id: "verifyToast" });
+        toast.loading("Scanning ID Card & Checking Authenticity...", {
+          id: "verifyToast",
+        });
 
         const result = await verifyIDCard(idFile);
 
         toast.dismiss("verifyToast");
+
+        // 🔥 Authenticity Check
+        if (result.isValid && result.authenticity_score < 6) {
+          throw new Error(
+            "ID check failed: Image looks like a photocopy or screen. Please upload a clear photo of the physical card.",
+          );
+        }
 
         // 2. LOGIC: Determine Status
         let isVerified = false;
@@ -166,7 +218,9 @@ const Auth = ({ setUser }) => {
           institutionName = result.institution;
           studentName = result.name;
           verificationReason = "Auto-verified by AI";
-          toast.success("✅ ID Verified! Welcome.");
+          toast.success(
+            "✅ ID Verified! Please check email to activate account.",
+          );
         } else if (result.isValid && !isNameMatch(name, result.name)) {
           isVerified = false;
           verificationStatus = "pending";
@@ -189,10 +243,13 @@ const Auth = ({ setUser }) => {
         const userCredential = await createUserWithEmailAndPassword(
           auth,
           email,
-          password
+          password,
         );
         const userAuth = userCredential.user;
         const emailDomain = email.split("@")[1];
+
+        // 🔥 Send Verification Email
+        await sendEmailVerification(userAuth);
 
         // Convert file to base64 if pending
         let idImageBase64 = null;
@@ -210,12 +267,25 @@ const Auth = ({ setUser }) => {
           email,
           gender,
           organization: institutionName || emailDomain,
+
+          // ID Verification Stats
           isVerified: isVerified,
           verificationStatus: verificationStatus,
           verificationReason: verificationReason,
           studentName: studentName,
           idCardImage: idImageBase64 || null,
-          role: "user", // New accounts are always users by default
+          role: "user",
+
+          // 🔥 NEW: Flags initialized to false
+          isAadharVerified: false,
+          aadharNumber: null,
+          isMedicalCompleted: false,
+          medical: null,
+          isDriver: false,
+          licenseVerified: false,
+          rcVerified: false,
+          carDetails: null,
+
           createdAt: serverTimestamp(),
         };
 
@@ -233,18 +303,8 @@ const Auth = ({ setUser }) => {
           });
         }
 
-        localStorage.setItem(
-          "user",
-          JSON.stringify({
-            ...newUserProfile,
-            createdAt: new Date().toISOString(),
-          })
-        );
-
-        if (setUser) setUser(newUserProfile); // Sync state for Navbar/Protected Routes
-
-        toast.success("Account created successfully!");
-        navigate("/");
+        // 🔥 ENABLE WAITING MODE
+        setAwaitingVerification(true);
       }
     } catch (err) {
       console.error(err);
@@ -254,6 +314,32 @@ const Auth = ({ setUser }) => {
       setLoading(false);
     }
   };
+
+  // 🔥 RENDER WAITING SCREEN IF SIGNED UP
+  if (awaitingVerification) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-6">
+        <div className="bg-white p-8 rounded-3xl shadow-xl text-center max-w-md animate-in fade-in zoom-in duration-300">
+          <div className="text-6xl mb-4">✉️</div>
+          <h2 className="text-2xl font-black text-slate-900 mb-2">
+            Check your Inbox
+          </h2>
+          <p className="text-slate-500 mb-6">
+            We sent a verification link to <strong>{formData.email}</strong>.
+            <br />
+            Click it to verify.
+          </p>
+          <div className="flex items-center justify-center gap-2 text-emerald-600 font-bold bg-emerald-50 py-3 rounded-xl">
+            <div className="w-2 h-2 bg-emerald-600 rounded-full animate-ping"></div>
+            Waiting for you to click...
+          </div>
+          <p className="text-xs text-slate-400 mt-4">
+            The app will auto-login once verified.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center px-6 py-12">
@@ -367,47 +453,31 @@ const Auth = ({ setUser }) => {
               <div className="mt-2 ml-1 animate-in fade-in slide-in-from-top-1 duration-300">
                 <div className="flex gap-1 h-1 mb-1">
                   <div
-                    className={`flex-1 rounded-full transition-colors duration-300 ${
-                      passStrength.score >= 1
-                        ? passStrength.color
-                        : "bg-slate-200"
-                    }`}
+                    className={`flex-1 rounded-full transition-colors duration-300 ${passStrength.score >= 1 ? passStrength.color : "bg-slate-200"}`}
                   ></div>
                   <div
-                    className={`flex-1 rounded-full transition-colors duration-300 ${
-                      passStrength.score >= 2
-                        ? passStrength.color
-                        : "bg-slate-200"
-                    }`}
+                    className={`flex-1 rounded-full transition-colors duration-300 ${passStrength.score >= 2 ? passStrength.color : "bg-slate-200"}`}
                   ></div>
                   <div
-                    className={`flex-1 rounded-full transition-colors duration-300 ${
-                      passStrength.score >= 3
-                        ? passStrength.color
-                        : "bg-slate-200"
-                    }`}
+                    className={`flex-1 rounded-full transition-colors duration-300 ${passStrength.score >= 3 ? passStrength.color : "bg-slate-200"}`}
                   ></div>
                 </div>
                 <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-wider">
                   <span
-                    className={`${
+                    className={
                       passStrength.score > 0
                         ? "text-slate-600"
                         : "text-slate-400"
-                    }`}
+                    }
                   >
                     Strength
                   </span>
                   <span
-                    className={`transition-colors duration-300 ${
-                      passStrength.score === 1
-                        ? "text-red-500"
-                        : passStrength.score === 2
-                        ? "text-yellow-500"
-                        : passStrength.score === 3
+                    className={
+                      passStrength.score >= 2
                         ? "text-emerald-500"
-                        : "text-slate-300"
-                    }`}
+                        : "text-red-500"
+                    }
                   >
                     {passStrength.label}
                   </span>
@@ -456,13 +526,7 @@ const Auth = ({ setUser }) => {
                     accept="image/*"
                     required
                     onChange={(e) => setIdFile(e.target.files[0])}
-                    className="block w-full text-sm text-slate-500
-                      file:mr-4 file:py-2.5 file:px-4
-                      file:rounded-full file:border-0
-                      file:text-xs file:font-semibold
-                      file:bg-emerald-50 file:text-emerald-700
-                      hover:file:bg-emerald-100
-                      cursor-pointer border border-dashed border-slate-300 rounded-xl p-2"
+                    className="block w-full text-sm text-slate-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 cursor-pointer border border-dashed border-slate-300 rounded-xl p-2"
                   />
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1 ml-1">
@@ -485,8 +549,8 @@ const Auth = ({ setUser }) => {
             {loading
               ? "Processing..."
               : isLogin
-              ? "Login"
-              : "Verify & Create Account"}
+                ? "Login"
+                : "Verify & Create Account"}
           </button>
         </form>
 

@@ -11,18 +11,16 @@ if (!API_KEY) {
 const genAI = new GoogleGenerativeAI(API_KEY);
 
 // 🔥 UPDATED MODEL NAME
-const MODEL_NAME = "gemini-2.5-flash";
+const MODEL_NAME = "gemini-1.5-flash";
 
 /**
  * 🛠️ HELPER: Convert Browser File to Base64
- * Required because browsers don't use 'Buffer' like Node.js
  */
 const fileToGenerativePart = async (file) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => {
       // The result looks like "data:image/jpeg;base64,....."
-      // We only need the part AFTER the comma
       const base64Data = reader.result.split(",")[1];
       resolve({
         inlineData: {
@@ -42,39 +40,146 @@ const fileToGenerativePart = async (file) => {
 export const verifyIDCard = async (file) => {
   try {
     const model = genAI.getGenerativeModel({ model: MODEL_NAME });
+    const imagePart = await fileToGenerativePart(file);
 
     const prompt = `
-      Analyze this image. It is an Organizational ID Card (Student ID or Employee ID).
+      Analyze this image strictly. It must be a valid physical Student ID card or Employee ID card.
       
-      CRITICAL EXTRACTION TASK:
-      1. **Extract Name**: Find the full name of the person.
-      2. **Extract Institution**: Find the name of the college, university, or company.
-      3. **Validity Check**: Mark as 'isValid: true' if it looks like a real ID card with a photo and name.
-      
-      Return ONLY raw JSON (no markdown):
+      Return ONLY a JSON object with this structure:
       {
-        "isValid": boolean, 
-        "name": "string", 
-        "institution": "string",
-        "reason": "explanation if invalid"
+        "isValid": boolean, // true ONLY if it is a clear, valid ID card.
+        "name": "Extracted Name" || null,
+        "institution": "Extracted Institution Name" || null,
+        "authenticity_score": number (0-10), // 10 = Real physical card, <5 = Screen/Photocopy
+        "reason": "Short reason if invalid or low score"
       }
+      
+      CRITICAL RULES:
+      1. If the image is blurry, dark, or not an ID card, set isValid: false.
+      2. If it looks like a photo of a screen or a xerox/photocopy, set authenticity_score below 5.
+      3. Do not include markdown formatting like \`\`\`json. Just the raw JSON string.
     `;
-
-    // Convert browser file to format Gemini accepts
-    const imagePart = await fileToGenerativePart(file);
 
     console.log(`Sending ID to Gemini (${MODEL_NAME})...`);
     const result = await model.generateContent([prompt, imagePart]);
     const response = await result.response;
-    const text = response.text();
-
-    // Clean markdown formatting if present
-    const jsonStr = text.replace(/```json|```/g, "").trim();
-    return JSON.parse(jsonStr);
+    const text = response
+      .text()
+      .replace(/```json|```/g, "")
+      .trim();
+    return JSON.parse(text);
   } catch (error) {
-    console.error("Gemini Verification Error:", error.message);
-    // Return pending status so Admin can handle it manually
-    return { isValid: false, isPending: true, reason: "AI Extraction Failed" };
+    console.error("Gemini Verification Error:", error);
+    return {
+      isValid: false,
+      authenticity_score: 0,
+      reason: "AI Service Error",
+    };
+  }
+};
+
+// ==========================================
+// 🆔 FEATURE: AADHAR VERIFICATION (REAL AI RESTORED)
+// ==========================================
+export const verifyAadhar = async (file) => {
+  try {
+    const model = genAI.getGenerativeModel({ model: MODEL_NAME });
+    const imagePart = await fileToGenerativePart(file);
+
+    const prompt = `
+      Analyze this image. It must be an Indian Aadhar Card.
+      
+      Return ONLY a JSON object:
+      {
+        "isValid": boolean,
+        "name": "Extracted Name" || null,
+        "aadharNumber": "Last 4 digits only" || null,
+        "authenticity_score": number (0-10),
+        "reason": "Reason if invalid"
+      }
+      
+      Do not include markdown.
+    `;
+
+    const result = await model.generateContent([prompt, imagePart]);
+    const text = result.response
+      .text()
+      .replace(/```json|```/g, "")
+      .trim();
+    return JSON.parse(text);
+  } catch (error) {
+    console.error("Aadhar Scan Error:", error);
+    return { isValid: false, reason: "Scan Failed" };
+  }
+};
+
+// ==========================================
+// 🚗 FEATURE: VEHICLE RC VERIFICATION (REAL AI RESTORED)
+// ==========================================
+export const verifyVehicleRC = async (file) => {
+  try {
+    const model = genAI.getGenerativeModel({ model: MODEL_NAME });
+    const imagePart = await fileToGenerativePart(file);
+
+    const prompt = `
+      Analyze this image. It must be a Vehicle Registration Certificate (RC).
+      
+      Return ONLY a JSON object:
+      {
+        "isValid": boolean,
+        "plateNumber": "Extracted Vehicle Number" || null,
+        "ownerName": "Extracted Owner Name" || null,
+        "vehicleModel": "Car Model" || null,
+        "reason": "Reason if invalid"
+      }
+      
+      Do not include markdown.
+    `;
+
+    const result = await model.generateContent([prompt, imagePart]);
+    const text = result.response
+      .text()
+      .replace(/```json|```/g, "")
+      .trim();
+    return JSON.parse(text);
+  } catch (error) {
+    console.error("RC Scan Error:", error);
+    return { isValid: false, reason: "Scan Failed" };
+  }
+};
+
+// ==========================================
+// 🪪 FEATURE: DRIVING LICENSE VERIFICATION (REAL AI RESTORED)
+// ==========================================
+export const verifyDrivingLicense = async (file) => {
+  try {
+    const model = genAI.getGenerativeModel({ model: MODEL_NAME });
+    const imagePart = await fileToGenerativePart(file);
+
+    const prompt = `
+      Analyze this image. It must be a valid Driving License.
+      
+      Return ONLY a JSON object:
+      {
+        "isValid": boolean,
+        "licenseNumber": "Extracted DL Number" || null,
+        "name": "Extracted Name" || null,
+        "vehicleClass": "LMV/MCWG etc" || null,
+        "reason": "Reason if invalid"
+      }
+      
+      Do not include markdown.
+    `;
+
+    const result = await model.generateContent([prompt, imagePart]);
+    const text = result.response
+      .text()
+      .replace(/```json|```/g, "")
+      .trim();
+    return JSON.parse(text);
+  } catch (error) {
+    console.error("License Scan Error:", error);
+    return { isValid: false, reason: "Scan Failed" };
   }
 };
 
@@ -86,16 +191,15 @@ export const generateEcoTip = async (kmSaved, co2Saved) => {
     const km = Math.round(kmSaved || 0);
     const co2 = Math.round(co2Saved || 0);
 
-    // If stats are very low, give a "Welcome" message immediately without calling AI
     if (km <= 5 && co2 <= 1) {
       return new Promise((resolve) =>
         setTimeout(
           () =>
             resolve(
-              "Take your first shared ride today to unlock AI-powered eco-insights!"
+              "Take your first shared ride today to unlock AI-powered eco-insights!",
             ),
-          800
-        )
+          800,
+        ),
       );
     }
 
@@ -107,12 +211,7 @@ export const generateEcoTip = async (kmSaved, co2Saved) => {
       
       Task: Generate a single, short, punchy, 1-sentence motivational "Green Fact" or specific comparison based on this data to encourage them.
       
-      Examples of desired tone: 
-      - "That's enough energy saved to charge over 500 smartphones!"
-      - "You've offset the equivalent carbon of planting two new trees this month!"
-      - "Incredible work; your choices are making the campus air cleaner every day."
-      
-      Constraint: Return ONLY the single sentence. Do not add quotation marks around the output.
+      Constraint: Return ONLY the single sentence. Do not add quotation marks.
     `;
 
     const result = await model.generateContent(prompt);
@@ -120,7 +219,6 @@ export const generateEcoTip = async (kmSaved, co2Saved) => {
     let text = response.text();
 
     text = text.replace(/^"|"$/g, "").trim();
-
     return text;
   } catch (error) {
     console.error("Gemini Eco-Tip API Error:", error);

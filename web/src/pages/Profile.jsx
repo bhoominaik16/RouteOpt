@@ -7,8 +7,9 @@ import {
   where,
   getDocs,
   orderBy,
-  doc, // 🔥 Added
-  onSnapshot, // 🔥 Added
+  doc,
+  onSnapshot,
+  updateDoc,
 } from "firebase/firestore";
 import {
   BarChart,
@@ -19,20 +20,44 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
-import toast from "react-hot-toast"; // 🔥 Added
+import toast from "react-hot-toast";
 
 import EcoLoopCoach from "../components/EcoLoopCoach";
+// 🔥 Import verification services
+import {
+  verifyAadhar,
+  verifyDrivingLicense,
+  verifyVehicleRC,
+} from "../services/gemini";
 
 const Profile = () => {
   const navigate = useNavigate();
-  const fileInputRef = useRef(null);
-  const [genderFilter, setGenderFilter] = useState(false);
 
-  const [user, setUser] = useState(() => {
-    const savedUser = JSON.parse(localStorage.getItem("user"));
-    return savedUser || null;
+  // Refs
+  const fileInputRef = useRef(null); // Profile Pic
+  const aadharInputRef = useRef(null); // Aadhar
+  const licenseInputRef = useRef(null); // License
+  const rcInputRef = useRef(null); // Vehicle RC
+
+  const [genderFilter, setGenderFilter] = useState(false);
+  const [user, setUser] = useState(
+    () => JSON.parse(localStorage.getItem("user")) || null,
+  );
+
+  // 🔥 Loading States
+  const [loadingAadhar, setLoadingAadhar] = useState(false);
+  const [loadingDriver, setLoadingDriver] = useState(false);
+  const [savingMedical, setSavingMedical] = useState(false);
+
+  // 🔥 Medical Form State
+  const [medicalForm, setMedicalForm] = useState({
+    bloodGroup: user?.medical?.bloodGroup || "",
+    allergies: user?.medical?.allergies || "",
+    conditions: user?.medical?.conditions || "",
+    medications: user?.medical?.medications || "",
   });
 
+  // Existing Stats State
   const DEMO_STATS = {
     greenPoints: 1250,
     co2Saved: "45.8",
@@ -45,66 +70,40 @@ const Profile = () => {
     { name: "Dec", saved: 15.1 },
     { name: "Jan", saved: 8.5 },
   ];
-
   const [stats, setStats] = useState(DEMO_STATS);
   const [chartData, setChartData] = useState(DEMO_CHART);
   const [loading, setLoading] = useState(true);
 
-  // 🔥 1. REAL-TIME LISTENER: Updates Profile automatically when Admin Approves
+  // 1. REAL-TIME LISTENER
   useEffect(() => {
     if (!user?.uid) return;
-
     const unsubUser = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
       if (docSnap.exists()) {
         const liveData = docSnap.data();
-
-        // Check if status changed from Pending -> Verified
-        if (liveData.isVerified && !user.isVerified) {
-          toast.success("🎉 You are now VERIFIED! Access Granted.");
-        }
-
-        // Check if status changed to Rejected
-        if (
-          liveData.verificationStatus === "rejected" &&
-          user.verificationStatus !== "rejected"
-        ) {
-          toast.error("❌ Your ID Verification was Rejected.");
-        }
-
-        // Sync with Local Storage so App.jsx knows we are allowed in
         const updatedUser = { ...user, ...liveData };
 
-        // Only update state if something actually changed (prevents loops)
-        if (
-          JSON.stringify(updatedUser.isVerified) !==
-            JSON.stringify(user.isVerified) ||
-          updatedUser.verificationStatus !== user.verificationStatus
-        ) {
+        if (JSON.stringify(updatedUser) !== JSON.stringify(user)) {
           setUser(updatedUser);
           localStorage.setItem("user", JSON.stringify(updatedUser));
+          if (liveData.medical) setMedicalForm(liveData.medical);
         }
       }
     });
-
     return () => unsubUser();
   }, [user?.uid]);
 
-  // 2. Existing Stats Logic
+  // 2. FETCH STATS
   useEffect(() => {
     let isMounted = true;
-
     const fetchCarbonStats = async () => {
       if (!user?.uid) return;
-
       try {
         const q = query(
           collection(db, "rides"),
           where("driverId", "==", user.uid),
-          orderBy("createdAt", "desc")
+          orderBy("createdAt", "desc"),
         );
-
         const querySnapshot = await getDocs(q);
-
         if (querySnapshot.empty) {
           if (isMounted) setLoading(false);
           return;
@@ -113,15 +112,13 @@ const Profile = () => {
         let totalDistance = 0;
         let totalRides = 0;
         const monthlyData = {};
-
         querySnapshot.forEach((doc) => {
           const ride = doc.data();
           const distance = parseFloat(
-            ride.route?.distance || ride.distance || 0
+            ride.route?.distance || ride.distance || 0,
           );
           totalDistance += distance;
           totalRides += 1;
-
           if (ride.createdAt) {
             const date = ride.createdAt.toDate();
             const month = date.toLocaleString("default", { month: "short" });
@@ -131,46 +128,139 @@ const Profile = () => {
         });
 
         if (isMounted) {
-          const co2Total = (totalDistance * 0.12).toFixed(1);
-          const points = Math.round(totalDistance * 10);
-
           setStats({
-            greenPoints: points,
-            co2Saved: co2Total,
+            greenPoints: Math.round(totalDistance * 10),
+            co2Saved: (totalDistance * 0.12).toFixed(1),
             ridesCompleted: totalRides,
-            rank: points > 500 ? 5 : 120,
+            rank: totalDistance * 10 > 500 ? 5 : 120,
           });
-
           setChartData(
             Object.keys(monthlyData).map((month) => ({
               name: month,
               saved: parseFloat(monthlyData[month].toFixed(1)),
-            }))
+            })),
           );
         }
       } catch (error) {
-        console.error("Fetch error:", error);
+        console.error(error);
       } finally {
         if (isMounted) setLoading(false);
       }
     };
-
     fetchCarbonStats();
     return () => {
       isMounted = false;
     };
-  }, [user?.uid]); // Updated dependency
+  }, [user?.uid]);
 
-  const handleImageUpload = (event) => {
-    const file = event.target.files[0];
+  // --- HANDLERS ---
+
+  const handleAadharUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setLoadingAadhar(true);
+    const toastId = toast.loading("Verifying Aadhar Authenticity...");
+    try {
+      const result = await verifyAadhar(file);
+      if (result.isValid && result.authenticity_score > 5) {
+        await updateDoc(doc(db, "users", user.uid), {
+          isAadharVerified: true,
+          aadharName: result.name,
+        });
+        toast.success("✅ Aadhar Verified!", { id: toastId });
+        window.dispatchEvent(new Event("userUpdated"));
+      } else {
+        toast.error(`Aadhar Failed: ${result.reason}`, { id: toastId });
+      }
+    } catch (err) {
+      toast.error("Error scanning Aadhar", { id: toastId });
+    } finally {
+      setLoadingAadhar(false);
+    }
+  };
+
+  const handleMedicalSubmit = async (e) => {
+    e.preventDefault();
+    if (!medicalForm.bloodGroup || !medicalForm.allergies) {
+      return toast.error("Blood Group and Allergies are compulsory.");
+    }
+    setSavingMedical(true);
+    try {
+      await updateDoc(doc(db, "users", user.uid), {
+        medical: medicalForm,
+        isMedicalCompleted: true,
+      });
+      toast.success("Medical Info Saved.");
+      window.dispatchEvent(new Event("userUpdated"));
+    } catch (e) {
+      toast.error("Failed to save.");
+    } finally {
+      setSavingMedical(false);
+    }
+  };
+
+  const handleRCUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setLoadingDriver(true);
+    const toastId = toast.loading("Verifying RC...");
+    try {
+      const result = await verifyVehicleRC(file);
+      if (result.isValid) {
+        await updateDoc(doc(db, "users", user.uid), {
+          rcVerified: true,
+          carDetails: {
+            plate: result.plateNumber,
+            model: result.vehicleModel,
+            owner: result.ownerName,
+          },
+        });
+        toast.success("✅ RC Verified!", { id: toastId });
+      } else {
+        toast.error(`RC Invalid: ${result.reason}`, { id: toastId });
+      }
+    } catch (err) {
+      toast.error("RC Scan Error", { id: toastId });
+    } finally {
+      setLoadingDriver(false);
+    }
+  };
+
+  const handleLicenseUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setLoadingDriver(true);
+    const toastId = toast.loading("Verifying License...");
+    try {
+      const result = await verifyDrivingLicense(file);
+      if (result.isValid) {
+        await updateDoc(doc(db, "users", user.uid), {
+          licenseVerified: true,
+          licenseNumber: result.licenseNumber,
+          isDriver: true,
+        });
+        toast.success("✅ License Verified!", { id: toastId });
+        window.dispatchEvent(new Event("userUpdated"));
+      } else {
+        toast.error(`License Invalid: ${result.reason}`, { id: toastId });
+      }
+    } catch (err) {
+      toast.error("License Scan Error", { id: toastId });
+    } finally {
+      setLoadingDriver(false);
+    }
+  };
+
+  const handleProfileImage = (e) => {
+    const file = e.target.files[0];
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        const base64Image = reader.result;
-        const updatedUser = { ...user, profileImage: base64Image };
-        setUser(updatedUser);
-        localStorage.setItem("user", JSON.stringify(updatedUser));
-        window.dispatchEvent(new Event("userUpdated"));
+        const base64 = reader.result;
+        const newUser = { ...user, profileImage: base64 };
+        setUser(newUser);
+        localStorage.setItem("user", JSON.stringify(newUser));
+        updateDoc(doc(db, "users", user.uid), { profileImage: base64 });
       };
       reader.readAsDataURL(file);
     }
@@ -180,7 +270,7 @@ const Profile = () => {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <p className="text-slate-400 font-medium animate-pulse">
-          Session expired. Please log in.
+          Loading Profile...
         </p>
       </div>
     );
@@ -194,7 +284,9 @@ const Profile = () => {
 
       <main className="relative z-10 grow max-w-6xl mx-auto w-full px-4 py-10">
         <div className="grid lg:grid-cols-12 gap-6">
+          {/* LEFT COLUMN */}
           <div className="lg:col-span-4 space-y-6">
+            {/* 1. Profile Card */}
             <div className="bg-white/80 backdrop-blur-md p-6 rounded-[2rem] shadow-sm border border-white/60 text-center group">
               <div className="relative mx-auto w-24 h-24 mb-4">
                 <div className="w-24 h-24 rounded-full overflow-hidden shadow-2xl ring-4 ring-emerald-50 group-hover:ring-emerald-100 transition-all duration-300 bg-slate-100">
@@ -210,7 +302,6 @@ const Profile = () => {
                     </div>
                   )}
                 </div>
-
                 <button
                   onClick={() => fileInputRef.current.click()}
                   className="absolute bottom-0 right-0 bg-slate-900 text-white p-2 rounded-full shadow-lg hover:bg-emerald-600 transition-all transform hover:scale-110 active:scale-90"
@@ -232,42 +323,140 @@ const Profile = () => {
                 <input
                   type="file"
                   ref={fileInputRef}
-                  onChange={handleImageUpload}
+                  onChange={handleProfileImage}
                   accept="image/*"
                   className="hidden"
                 />
               </div>
-
               <h2 className="text-xl font-bold text-slate-900 leading-tight">
                 {user.name}
               </h2>
               <p className="text-xs text-slate-500 mb-4">{user.email}</p>
 
-              {/* 🔥 UPDATED VERIFICATION STATUS BADGES */}
-              <div className="flex flex-col items-center gap-2">
-                {user.isVerified ? (
-                  <>
-                    <div className="inline-flex px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-[10px] font-bold tracking-widest uppercase border border-emerald-100">
-                      ✓ Verified Student
-                    </div>
-                    {user.organization && (
-                      <p className="text-xs text-slate-500 font-medium">
-                        {user.organization}
-                      </p>
-                    )}
-                  </>
-                ) : user.verificationStatus === "rejected" ? (
-                  <div className="inline-flex px-3 py-1 bg-red-50 text-red-700 rounded-full text-[10px] font-bold tracking-widest uppercase border border-red-100">
-                    ❌ Verification Rejected
-                  </div>
-                ) : (
-                  <div className="inline-flex px-3 py-1 bg-amber-50 text-amber-700 rounded-full text-[10px] font-bold tracking-widest uppercase border border-amber-100 animate-pulse">
-                    ⏳ Verification Pending
-                  </div>
+              <div className="flex justify-center gap-2 flex-wrap">
+                {user.isAadharVerified && (
+                  <span className="px-2 py-1 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded uppercase">
+                    ✅ Aadhar Verified
+                  </span>
+                )}
+                {user.isVerified && (
+                  <span className="px-2 py-1 bg-blue-100 text-blue-800 text-[10px] font-bold rounded uppercase">
+                    Student ID Verified
+                  </span>
                 )}
               </div>
             </div>
 
+            {/* 2. Medical Info Section */}
+            <div className="bg-white/80 p-5 rounded-[1.5rem] shadow-sm border border-slate-200/60">
+              <h3 className="text-xs font-bold text-red-400 uppercase tracking-widest mb-4">
+                Medical History {user.isMedicalCompleted && "✅"}
+              </h3>
+
+              {user.isMedicalCompleted ? (
+                // VIEW MODE
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Blood:</span>
+                    <span className="font-bold">
+                      {user.medical?.bloodGroup}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Allergies:</span>
+                    <span className="font-bold">{user.medical?.allergies}</span>
+                  </div>
+                  <button
+                    onClick={() =>
+                      updateDoc(doc(db, "users", user.uid), {
+                        isMedicalCompleted: false,
+                      })
+                    }
+                    className="w-full mt-4 text-xs text-slate-400 underline hover:text-slate-600"
+                  >
+                    Edit Info
+                  </button>
+                </div>
+              ) : (
+                // EDIT MODE (Form)
+                <form onSubmit={handleMedicalSubmit} className="space-y-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                      Blood Group *
+                    </label>
+                    <select
+                      className="w-full p-2 bg-slate-50 rounded-lg text-xs font-bold border-none"
+                      value={medicalForm.bloodGroup}
+                      onChange={(e) =>
+                        setMedicalForm({
+                          ...medicalForm,
+                          bloodGroup: e.target.value,
+                        })
+                      }
+                    >
+                      <option value="">Select...</option>
+                      <option value="A+">A+</option>
+                      <option value="A-">A-</option>
+                      <option value="B+">B+</option>
+                      <option value="B-">B-</option>
+                      <option value="O+">O+</option>
+                      <option value="O-">O-</option>
+                      <option value="AB+">AB+</option>
+                      <option value="AB-">AB-</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                      Allergies *
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full p-2 bg-slate-50 rounded-lg text-xs font-bold border-none"
+                      value={medicalForm.allergies}
+                      onChange={(e) =>
+                        setMedicalForm({
+                          ...medicalForm,
+                          allergies: e.target.value,
+                        })
+                      }
+                      placeholder="e.g. Peanuts (or None)"
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    className="w-full p-2 bg-slate-50 rounded-lg text-xs font-bold border-none"
+                    value={medicalForm.conditions}
+                    onChange={(e) =>
+                      setMedicalForm({
+                        ...medicalForm,
+                        conditions: e.target.value,
+                      })
+                    }
+                    placeholder="Conditions (Optional)"
+                  />
+                  <input
+                    type="text"
+                    className="w-full p-2 bg-slate-50 rounded-lg text-xs font-bold border-none"
+                    value={medicalForm.medications}
+                    onChange={(e) =>
+                      setMedicalForm({
+                        ...medicalForm,
+                        medications: e.target.value,
+                      })
+                    }
+                    placeholder="Meds (Optional)"
+                  />
+                  <button
+                    disabled={savingMedical}
+                    className="w-full py-2 bg-red-50 text-red-600 font-bold text-xs rounded-lg hover:bg-red-100 transition"
+                  >
+                    {savingMedical ? "Saving..." : "Save Medical Info"}
+                  </button>
+                </form>
+              )}
+            </div>
+
+            {/* 3. Account Settings */}
             <div className="bg-white/80 backdrop-blur-md p-5 rounded-[1.5rem] shadow-sm border border-white/60">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
                 <div className="w-1 h-4 bg-emerald-500 rounded-full"></div>
@@ -300,7 +489,37 @@ const Profile = () => {
             </div>
           </div>
 
+          {/* RIGHT COLUMN */}
           <div className="lg:col-span-8 space-y-6">
+            {/* 4. AADHAR UPLOAD (Shown if not verified) */}
+            {!user.isAadharVerified && (
+              <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-orange-200 relative overflow-hidden">
+                <h3 className="text-sm font-bold text-orange-600 uppercase tracking-widest mb-2">
+                  ⚠️ Identity Verification
+                </h3>
+                <p className="text-sm text-slate-500 mb-4">
+                  Required to offer rides. Upload your Aadhar Card.
+                </p>
+                <div
+                  onClick={() => aadharInputRef.current?.click()}
+                  className="border-2 border-dashed border-orange-200 p-4 rounded-xl text-center cursor-pointer hover:bg-orange-50"
+                >
+                  <span className="text-xl">🆔</span>{" "}
+                  <span className="text-sm font-bold text-slate-500">
+                    {loadingAadhar ? "Verifying..." : "Upload Aadhar Card"}
+                  </span>
+                </div>
+                <input
+                  type="file"
+                  ref={aadharInputRef}
+                  onChange={handleAadharUpload}
+                  className="hidden"
+                  accept="image/*"
+                />
+              </div>
+            )}
+
+            {/* --- EXISTING STATS & CHARTS --- */}
             {!loading && (
               <EcoLoopCoach
                 totalKmSaved={parseFloat(stats.co2Saved) / 0.12}
@@ -373,8 +592,6 @@ const Profile = () => {
                 {loading ? (
                   <div className="h-full flex items-center justify-center space-x-2">
                     <div className="w-1 h-4 bg-emerald-500 animate-bounce"></div>
-                    <div className="w-1 h-6 bg-emerald-500 animate-bounce [animation-delay:-0.2s]"></div>
-                    <div className="w-1 h-4 bg-emerald-500 animate-bounce [animation-delay:-0.4s]"></div>
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
@@ -417,6 +634,77 @@ const Profile = () => {
               </div>
             </div>
 
+            {/* 🔥 MOVED DRIVER VERIFICATION SECTION HERE (BELOW SAVINGS) */}
+            <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200/60 relative overflow-hidden">
+              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-widest mb-4">
+                🚗 Driver Verification
+              </h3>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                {/* RC Upload */}
+                <div className="p-4 bg-slate-50 rounded-xl">
+                  <h4 className="text-xs font-bold text-slate-500 mb-2">
+                    Vehicle RC
+                  </h4>
+                  {user.rcVerified ? (
+                    <div className="text-emerald-600 font-bold text-sm flex items-center gap-1">
+                      ✅ {user.carDetails?.plate}
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => rcInputRef.current?.click()}
+                        className="w-full py-2 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100"
+                      >
+                        {loadingDriver ? "..." : "Upload RC"}
+                      </button>
+                      <input
+                        type="file"
+                        ref={rcInputRef}
+                        onChange={handleRCUpload}
+                        className="hidden"
+                        accept="image/*"
+                      />
+                    </>
+                  )}
+                </div>
+
+                {/* License Upload */}
+                <div className="p-4 bg-slate-50 rounded-xl">
+                  <h4 className="text-xs font-bold text-slate-500 mb-2">
+                    Driving License
+                  </h4>
+                  {user.licenseVerified ? (
+                    <div className="text-emerald-600 font-bold text-sm flex items-center gap-1">
+                      ✅ Verified
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => licenseInputRef.current?.click()}
+                        className="w-full py-2 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100"
+                      >
+                        {loadingDriver ? "..." : "Upload License"}
+                      </button>
+                      <input
+                        type="file"
+                        ref={licenseInputRef}
+                        onChange={handleLicenseUpload}
+                        className="hidden"
+                        accept="image/*"
+                      />
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {loadingDriver && (
+                <div className="absolute inset-0 bg-white/90 flex items-center justify-center font-bold text-emerald-600 animate-pulse">
+                  Verifying Document...
+                </div>
+              )}
+            </div>
+
             <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200/60">
               <div className="flex items-center gap-5 p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100/50">
                 <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-xl shadow-sm">
@@ -435,7 +723,7 @@ const Profile = () => {
                     <span className="text-base font-black text-emerald-600">
                       {Math.min(
                         100,
-                        Math.round((stats.greenPoints / 2000) * 100)
+                        Math.round((stats.greenPoints / 2000) * 100),
                       )}
                       %
                     </span>
@@ -446,7 +734,7 @@ const Profile = () => {
                       style={{
                         width: `${Math.min(
                           100,
-                          (stats.greenPoints / 2000) * 100
+                          (stats.greenPoints / 2000) * 100,
                         )}%`,
                       }}
                     />
