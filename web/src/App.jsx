@@ -16,6 +16,7 @@ import RideDetails from "./pages/RideDetails";
 import RideGiverDashboard from "./pages/RideGiverDashboard";
 import SOSButton from "./components/SOSButton";
 import AdminDashboard from "./pages/AdminDashboard";
+import RideTakerLiveView from './pages/RideTakerLiveView';
 
 ReactGA.initialize("G-DGMYLY6844");
 
@@ -25,7 +26,6 @@ const VerifiedRoute = ({ user, children }) => {
   return children;
 };
 
-// 👑 ADMIN GUARD
 const AdminRoute = ({ user, children }) => {
   const localUser = JSON.parse(localStorage.getItem("user"));
   const currentUser = user || localUser;
@@ -66,8 +66,8 @@ function App() {
           <Route path="/ride-taker" element={<VerifiedRoute user={user}><RideTaker /></VerifiedRoute>} />
           <Route path="/ride-giver-dashboard" element={<VerifiedRoute user={user}><RideGiverDashboard /></VerifiedRoute>} />
           <Route path="/ride-details/:id" element={<VerifiedRoute user={user}><RideDetails /></VerifiedRoute>} />
-
-          {/* 🔥 PROTECTED ADMIN ROUTE */}
+          <Route path="/live/:rideId" element={<RideTakerLiveView />} />
+       
           <Route path="/admin" element={
             <AdminRoute user={user}>
               <AdminDashboard />

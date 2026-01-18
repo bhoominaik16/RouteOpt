@@ -3,15 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import toast from 'react-hot-toast';
+import useLiveLocation from '../hooks/useLiveLocation';
 
-// 🔥 Firebase Imports
 import { db } from '../firebase';
 import { 
   collection, query, where, onSnapshot, 
   doc, updateDoc, increment, arrayUnion, orderBy, limit 
 } from 'firebase/firestore';
 
-// --- CUSTOM ICONS ---
 const routeIcon = new L.Icon({
   iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
   iconSize: [20, 32], iconAnchor: [10, 32]
@@ -25,6 +24,11 @@ const passengerIcon = new L.Icon({
 const requestIcon = new L.Icon({
   iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-gold.png',
   iconSize: [20, 32], iconAnchor: [10, 32]
+});
+
+const driverLiveIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+  iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
 });
 
 const isValidCoords = (coords) => {
@@ -53,6 +57,12 @@ const RideGiverDashboard = () => {
   const [currentRideRoute, setCurrentRideRoute] = useState([]);
   const [rideDetails, setRideDetails] = useState(null);
   const [confirmedPassengers, setConfirmedPassengers] = useState([]);
+
+  const { myLocation: driverLiveLoc, othersLocations: passengerLiveLocs } = useLiveLocation(
+        rideDetails?.id,  
+        user?.uid,      
+        'driver'      
+    );
 
   useEffect(() => {
     if (!user) return;
@@ -150,8 +160,7 @@ const RideGiverDashboard = () => {
 
   return (
     <div className="h-[85vh] max-h-[85vh] m-2 w-[99%] rounded-3xl bg-slate-50 flex flex-col md:flex-row overflow-hidden border-b border-slate-200">      
-      
-      {/* --- LEFT SIDEBAR: COMPACT --- */}
+
       <div className="w-full md:w-[30%] lg:w-[25%] bg-white border-r border-slate-200 flex flex-col h-full z-10 shadow-xl">
         <div className="p-4 border-b border-slate-100 bg-slate-50">
             <h1 className="text-lg font-black text-slate-900 mb-0.5 flex items-center gap-2">🚖 Dashboard</h1>
@@ -164,7 +173,6 @@ const RideGiverDashboard = () => {
         </div>
 
         <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
-            {/* Waitlist */}
             <div>
                 <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Waitlist ({requests.length})</h3>
                 {requests.length === 0 ? (
@@ -186,7 +194,6 @@ const RideGiverDashboard = () => {
                 )}
             </div>
 
-            {/* Confirmed */}
             <div>
                 <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">On Board ({confirmedPassengers.length})</h3>
                 {confirmedPassengers.map((p, i) => (
@@ -212,7 +219,6 @@ const RideGiverDashboard = () => {
         )}
       </div>
 
-      {/* --- RIGHT SIDE: MAP --- */}
       <div className="flex-1 bg-slate-200 relative h-full">
         <MapContainer center={[19.0760, 72.8777]} zoom={11} style={{ height: '100%', width: '100%' }}>
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
@@ -230,10 +236,31 @@ const RideGiverDashboard = () => {
             {isValidCoords(selectedRequest?.pickupCoords) && (
                 <Marker position={[selectedRequest.pickupCoords.lat, selectedRequest.pickupCoords.lng]} icon={requestIcon} zIndexOffset={1000} />
             )}
+            {driverLiveLoc && (
+                <Marker position={[driverLiveLoc.lat, driverLiveLoc.lng]} icon={driverLiveIcon} zIndexOffset={1000}>
+                    <Popup>You (Live)</Popup>
+                </Marker>
+            )}
+
+            {confirmedPassengers.map((p, i) => {
+                const liveData = passengerLiveLocs[p.uid];
+                const position = liveData ? [liveData.lat, liveData.lng] : (isValidCoords(p.pickupCoords) ? [p.pickupCoords.lat, p.pickupCoords.lng] : null);
+
+                if (!position) return null;
+
+                    return (
+                        <Marker key={p.uid || i} position={position} icon={passengerIcon}>
+                            <Popup>
+                                <b>{p.name}</b><br/>
+                                {liveData ? "Live Location" : "Pickup Point"}
+                            </Popup>
+                        </Marker>
+                    )
+                })}
         </MapContainer>
-        
-        {/* Compact Legend */}
+
         <div className="absolute top-3 right-3 bg-white/90 backdrop-blur px-3 py-2.5 rounded-xl shadow-lg z-[1000] border border-white/50 text-[10px] space-y-1.5 font-bold">
+            <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-blue-500"></div> You (Live)</div>
             <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-slate-900"></div> Route</div>
             <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-emerald-500"></div> Passenger</div>
             <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-amber-400"></div> Request</div>
